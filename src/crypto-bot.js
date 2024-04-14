@@ -520,7 +520,7 @@ export default class CryptoBot {
       case 'status': {
         if (!this.hasBot(parameter)) return this.telegramBot.log(`Bot ${parameter} not found`);
         let botSettings = this.getBotSettings(parameter);
-        return this.telegramBot.log(botSettings.strategy.lastResult.status || 'none');
+        return this.telegramBot.log(botSettings.strategy?.lastResult?.status || 'none');
       }
 
       case 'next': {
@@ -528,7 +528,9 @@ export default class CryptoBot {
           .filter((o) => o.isScheduledForToday && !o.isClosed && Utils.toShortDate(o.openDate) === Utils.toShortDate(new Date(Date.now())))
           .sort((a, b) => a.openDate.getTime() - b.openDate.getTime())
           .map((o) => o.toString());
-        return this.telegramBot.log(reports.join('\n'));
+
+        if (reports.length > 0) return this.telegramBot.log(reports.join('\n'));
+        else return this.telegramBot.log('No orders planned for today');
       }
 
       default:

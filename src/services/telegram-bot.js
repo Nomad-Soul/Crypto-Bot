@@ -53,13 +53,15 @@ export default class TelegramCryptoBot {
    * @param {string} message
    */
   async sendMessage(chatId, message) {
+    // checks if empty or undefined string;
+    message = message ? message : 'Invalid operation';
     return this.#telegramBot.sendMessage(chatId, message);
   }
 
   /**
    * @param {string} message
    */
-  log(message) {
+  async log(message) {
     if (typeof this.#ownerId !== 'undefined' && this.#ownerId > 0) return this.sendMessage(this.#ownerId, message);
   }
 }
