@@ -1,0 +1,49 @@
+.env
+.env-development
+.env-production
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Output of 'npm pack'
+*.tgz
+
+# Random
+trash
+.DS_Store
+.sass-cache
+.tmp
+.rvmrc
+.trashes
+
+*~
+
+# Gatsby related
+.cache/
+public
+
+# Editor
+.vscode
+.vscode-test
+.prettierignore
+.prettierrc
+.eslintrc.json
+jsconfig.json
+
+# app generated files
+dist/*
+build/*
+json/*
+log/*
+web/css/bootstrap.min.css
