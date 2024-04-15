@@ -4,6 +4,7 @@ import BotSettings from './data/bot-settings.js';
 import EcaOrder from './data/eca-order.js';
 import PairData from './data/pair-data.js';
 import TraderDeal from './data/trader-deal.js';
+import DealPlanner from './strategies/deal-planner.js';
 import Utils from './utils.js';
 
 export default class Renderer {
@@ -289,7 +290,7 @@ export default class Renderer {
   /**
    *
    * @param {EcaOrder} orderData
-   *    * @param {PairData} pairData
+   * @param {PairData} pairData
    * @returns
    */
   renderOrder(orderData, pairData) {
@@ -354,7 +355,9 @@ export default class Renderer {
     let orders = openDeal.orders.map((id) => this.#bot.getExchangeOrderFromPlannedOrderId(id, openDeal.account));
     let closedOrders = orders.filter((order) => order.isClosed).sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime());
     let nextBuyOrder = orders.find((order) => order.isOpen);
-    let takeProfitOrder = this.#bot.getExchangeOrderFromPlannedOrderId(openDeal.sellOrders[0], openDeal.account);
+    let takeProfitOrder = openDeal.sellOrders[0]
+      ? this.#bot.getExchangeOrderFromPlannedOrderId(openDeal.sellOrders[0], openDeal.account)
+      : new DealPlanner(this.#bot, openDeal.botId).proposeTakeProfitOrder(openDeal);
 
     let safetyOrderPrice = nextBuyOrder.price;
     let takeProfitPrice = takeProfitOrder.price;
