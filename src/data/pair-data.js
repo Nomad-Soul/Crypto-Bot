@@ -2,13 +2,14 @@ import App from '../app.js';
 
 export default class PairData {
   id;
-  baseCurrency;
-  quoteCurrency;
+  base;
+  quote;
   minVolume;
   maxQuoteDigits;
   maxBaseDigits;
   minBaseDisplayDigits;
-  nativeCryptoLabel;
+  nativeBaseId;
+  nativeQuoteId;
 
   static alias = new Map([
     ['xxbtzeur', 'btc/eur'],
@@ -31,13 +32,14 @@ export default class PairData {
 
   constructor(data) {
     this.id = data.id;
-    this.baseCurrency = data.crypto;
-    this.quoteCurrency = data.currency;
+    this.base = data.base;
+    this.quote = data.quote;
     this.minVolume = data.minVolume;
     this.maxQuoteDigits = data.maxQuoteDigits;
     this.maxBaseDigits = data.maxBaseDigits;
     this.minBaseDisplayDigits = data.minBaseDisplayDigits;
-    this.nativeCryptoLabel = data.nativeCryptoLabel;
+    this.nativeBaseId = data.nativeBaseId;
+    this.nativeQuoteId = data.nativeQuoteId;
   }
 
   static Get(pair) {

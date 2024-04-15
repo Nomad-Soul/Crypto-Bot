@@ -43,8 +43,8 @@
       "strategy": "eca-trader",
       "active": true,
       "pair": "eth/eur",
-      "crypto": "eth",
-      "quoteCurrency": "eur",
+      "base": "eth",
+      "quote": "eur",
       "badgeClass": "bg-accent",
       "options": {
         "initialOrderSize": 60,
@@ -64,8 +64,8 @@
       "active": true,
       "maxPrice": 61999.69,
       "pair": "btc/eur",
-      "crypto": "btc",
-      "quoteCurrency": "eur",
+      "base": "btc",
+      "quote": "eur",
       "badgeClass": "bg-warning",
       "maxVolumeQuote": 6,
       "options": {

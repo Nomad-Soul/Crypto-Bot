@@ -277,7 +277,7 @@ export default class CoinbaseClient extends ClientBase {
    * @returns
    */
   getPairId(botSettings) {
-    return `${botSettings.crypto}-${botSettings.quoteCurrency}`.toUpperCase();
+    return `${botSettings.base}-${botSettings.quote}`.toUpperCase();
   }
 
   convertResponseToExchangeOrder(response) {
@@ -335,14 +335,15 @@ export default class CoinbaseClient extends ClientBase {
    */
   static ConvertCoinbasePairData(pair) {
     try {
-      var crypto = pair.base_currency_id.toLowerCase();
-      var currency = pair.quote_currency_id.toLowerCase();
+      var base = pair.base_currency_id.toLowerCase();
+      var quote = pair.quote_currency_id.toLowerCase();
 
       return new PairData({
-        id: `${crypto}/${currency}`,
-        crypto: crypto,
-        nativeCryptoLabel: pair.base_currency_id,
-        currency: currency,
+        id: `${base}/${quote}`,
+        base: base,
+        quote: quote,
+        nativeBaseId: pair.base_currency_id,
+        nativeQuoteId: pair.quote_currency_id,
         minVolume: Number(pair.base_min_size),
         maxBaseDigits: pair.base_increment.split('.')[1]?.length || 0,
         maxQuoteDigits: pair.quote_increment.split('.')[1]?.length || 0,
@@ -386,7 +387,7 @@ export default class CoinbaseClient extends ClientBase {
 
     var data = {
       client_order_id: action.id,
-      product_id: `${pairData.baseCurrency}-${pairData.quoteCurrency}`.toUpperCase(),
+      product_id: `${pairData.base}-${pairData.quote}`.toUpperCase(),
       side: action.direction.toUpperCase(),
       order_configuration: orderConfig,
     };

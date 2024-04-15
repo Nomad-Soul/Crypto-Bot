@@ -84,7 +84,7 @@ export default class Renderer {
       //console.log(order);
       try {
         html += `<div class="row mt-2" data-id="${order.id ?? ''}">
-        <div class="col-md-1 col-2 text-start"><span class="badge ${botSettings.badgeClass}">${botSettings.crypto}</span></div>
+        <div class="col-md-1 col-2 text-start"><span class="badge ${botSettings.badgeClass}">${botSettings.base}</span></div>
         <div class="col-md-2 col-5 text-start ${dateClass}" title="${Utils.toShortTime(date)}">${Utils.toShortDate(date)}</div>
         <div class="col-md-1 col-2 text-start ${statusClass}">${order.direction}</div>
         <div class="col-md-2 col-3 text-end ${costClass}">${Number(volume).toFixed(4)}</div>
@@ -159,13 +159,13 @@ export default class Renderer {
         return groupBy;
       }, {});
 
-      groupByMonth.baseCurrency = pairData.baseCurrency;
-      groupByMonth.quoteCurrency = pairData.quoteCurrency;
+      groupByMonth.base = pairData.base;
+      groupByMonth.quote = pairData.quote;
       dataset.set(botIds[i], groupByMonth);
 
       let currentPrice = Number(this.#bot.getPrice(pair));
 
-      let desiredAmount = Math.max(botSettings.maxVolumeEur, pairData.minVolume * currentPrice);
+      let desiredAmount = Math.max(botSettings.maxVolumeQuote, pairData.minVolume * currentPrice);
       let costBasis = weightedAverage.map((value) => value.weightedSum / value.sum)[0];
       let costUnit = '';
       if (costBasis > 10000) {
@@ -194,10 +194,10 @@ export default class Renderer {
           year: 'numeric',
         });
 
-      if (desiredAmount > botSettings.maxVolumeEur) amountClass = 'text-danger';
+      if (desiredAmount > botSettings.maxVolumeQuote) amountClass = 'text-danger';
 
       html += `<div class="row mt-2" data-groupBy="${JSON.stringify(groupByMonth)}">
-        <div class="col-md-1 col-2 text-start"><span class="badge ${botSettings.badgeClass}">${botSettings.crypto}</span></div>
+        <div class="col-md-1 col-2 text-start"><span class="badge ${botSettings.badgeClass}">${botSettings.base}</span></div>
         <div class="col-md-1 d-md-block d-none text-end ${amountClass}">${Number(desiredAmount).toFixed(2)}</div>
         <div class="col-md-1 d-md-block d-none text-end">${botSettings.options.type}</div>
         <div class="col-md-2 d-md-block d-none text-md-end">${frequencyText}</div>
@@ -299,8 +299,8 @@ export default class Renderer {
     var datestring = Utils.toShortDate(orderData.closeDate ?? orderData.openDate);
 
     let orderPrice = Number(orderData.price);
-    let baseCurrency = pairData.baseCurrency.toUpperCase();
-    let quoteCurrency = pairData.quoteCurrency.toUpperCase();
+    let base = pairData.base.toUpperCase();
+    let quote = pairData.quote.toUpperCase();
     let vol = Number(orderData.volume);
     let volEuro = vol * orderPrice;
     let feeEuro = Number(orderData.fees);
@@ -311,7 +311,7 @@ export default class Renderer {
           <div class="col-2-5 text-start fw-bold ${textClass}"><i class="bi ${iconClass}"></i>${orderData.direction} ${orderData.type}</div>
           <div class="col-1-5 text-end text-info">${volEuro.toFixed(2)} €</div>
           <div class="col-1-5 text-end text-danger">${feeEuro.toFixed(2)} €</div>
-          <div class="col-3-5 text-end">${vol.toFixed(4)} ${baseCurrency} @ ${orderPrice.toFixed(2)} ${quoteCurrency}</div>
+          <div class="col-3-5 text-end">${vol.toFixed(4)} ${base} @ ${orderPrice.toFixed(2)} ${quote}</div>
       </div>`;
 
     return row;
@@ -348,16 +348,18 @@ export default class Renderer {
   </div></div>`,
       };
     }
+    var dealPlanner = new DealPlanner(this.#bot, openDeal.botId);
     var accountClient = this.#bot.getClient(openDeal.account);
     var botSettings = this.#bot.getBotSettings(openDeal.botId);
     var pairData = accountClient.getPairData(botSettings.pair);
 
-    let orders = openDeal.orders.map((id) => this.#bot.getExchangeOrderFromPlannedOrderId(id, openDeal.account));
-    let closedOrders = orders.filter((order) => order.isClosed).sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime());
-    let nextBuyOrder = orders.find((order) => order.isOpen);
-    let takeProfitOrder = openDeal.sellOrders[0]
-      ? this.#bot.getExchangeOrderFromPlannedOrderId(openDeal.sellOrders[0], openDeal.account)
-      : new DealPlanner(this.#bot, openDeal.botId).proposeTakeProfitOrder(openDeal);
+    let orders = openDeal.orders.map((id) => this.#bot.getPlannedOrder(id));
+    let closedOrders = orders
+      .filter((order) => order.isClosed)
+      .sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime())
+      .map((order) => this.#bot.getExchangeOrderFromPlannedOrderId(order.id, openDeal.account));
+    let nextBuyOrder = orders.find((order) => !order.isClosed && order.direction === 'buy') ?? dealPlanner.calculateSafetyOrder(openDeal);
+    let takeProfitOrder = openDeal.sellOrders[0] ? this.#bot.getPlannedOrder(openDeal.sellOrders[0]) : dealPlanner.proposeTakeProfitOrder(openDeal);
 
     let safetyOrderPrice = nextBuyOrder.price;
     let takeProfitPrice = takeProfitOrder.price;
@@ -386,7 +388,8 @@ export default class Renderer {
     let labelLoss = widthPnL < 0 ? currentPrice : '';
     let labelProfit = widthPnL < 0 ? '' : currentPrice;
 
-    var quoteCurrency = pairData.quoteCurrency.toUpperCase();
+    var quoteCurrency = pairData.quote.toUpperCase();
+
     let dealTemplate = `
     <div class="bg-dark-container p-md-4 p-2"><div class="row">
       <h5 class="text-start">Active <span class="text-info">${pairData.id}</span> deal: <code>${openDeal.id}</code> </h5>
@@ -418,12 +421,12 @@ export default class Renderer {
           </div>
       </div>
       <div class="row">
-        <p class="lead text-start">Next safety order: buy ${nextBuyOrder.volume} ${pairData.baseCurrency} @ ${nextBuyOrder.price.toFixed(2)} (${(nextBuyOrder.volume * nextBuyOrder.price).toFixed(2)} ${quoteCurrency})</p>
+        <p class="lead text-start">Next safety order: buy ${nextBuyOrder.volume} ${pairData.base} @ ${nextBuyOrder.price.toFixed(2)} (${(nextBuyOrder.volume * nextBuyOrder.price).toFixed(2)} ${quoteCurrency})</p>
       </div>
       `;
 
     for (let i = 0; i < closedOrders.length; i++) {
-      let order = orders[i];
+      let order = closedOrders[i];
       if (order.status === 'open') continue;
       dealTemplate += `<div class="row">
         <div class="col text-start">

@@ -106,7 +106,7 @@ export default class EcaStacker extends Strategy {
     } else if (this.lastOrder.status === 'executed') {
       hoursElapsed = this.lastOrder.hoursElapsed(this.dateNow);
       this.logStatus(
-        `${yellowBright`${Utils.timeToHoursOrDaysText(hoursElapsed)}`} have elapsed since last ${cyanBright`${this.pairData.baseCurrency}`} order [${cyanBright`${this.lastOrder.id}`}]`,
+        `${yellowBright`${Utils.timeToHoursOrDaysText(hoursElapsed)}`} have elapsed since last ${cyanBright`${this.pairData.base}`} order [${cyanBright`${this.lastOrder.id}`}]`,
       );
     }
 

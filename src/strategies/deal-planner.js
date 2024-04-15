@@ -60,7 +60,7 @@ export default class DealPlanner {
     let priceDeviation = this.priceDeviation;
     let safetyOrders = openDeal.buyOrders
       .map((id) => this.#bot.getExchangeOrderFromPlannedOrderId(id, this.botSettings.account))
-      .filter((o) => !o.isOpen)
+      .filter((o) => o && !o.isOpen)
       .sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime());
 
     let firstOrder = safetyOrders[0];
@@ -186,7 +186,7 @@ export default class DealPlanner {
 
     App.warning(`Total spent: ${total.toFixed(2)}`);
     var newDeal = new TraderDeal({
-      id: `${this.botId}-${this.botSettings.userref + dealIndex}`,
+      index: this.botSettings.userref + dealIndex,
       botId: this.botId,
       buyOrders: orders.filter((o) => o.direction === 'buy').map((o) => o.id),
       sellOrders: [],
@@ -208,7 +208,7 @@ export default class DealPlanner {
     const { averagePrice, costBasis, targetPrice: targetPrice } = dealData;
 
     var accountClient = this.#bot.getClient(this.botSettings.account);
-    var volume = accountClient.getBalance(this.botSettings.crypto);
+    var volume = accountClient.getBalance(this.botSettings.base);
     var volumeQuote = volume * targetPrice;
     var pnl = (targetPrice - averagePrice) * volume;
 
@@ -217,7 +217,7 @@ export default class DealPlanner {
     );
     var colour = pnl > 0 ? greenBright : redBright;
     App.log(
-      yellowBright`Estimated PnL: ${colour`${pnl.toFixed(this.pairData.maxQuoteDigits)} ${this.pairData.quoteCurrency} (${((100 * pnl) / costBasis).toFixed(2)} %)`}`,
+      yellowBright`Estimated PnL: ${colour`${pnl.toFixed(this.pairData.maxQuoteDigits)} ${this.pairData.quote} (${((100 * pnl) / costBasis).toFixed(2)} %)`}`,
     );
 
     var sellOrder = new EcaOrder({
@@ -238,15 +238,5 @@ export default class DealPlanner {
 
     console.log(sellOrder);
     return sellOrder;
-  }
-
-  /**
-   * @param {number} index
-   * @param {{ index: any; orders: string | string[]; }} deal
-   */
-  findIndex(index, deal) {
-    var id = `${this.botId}:${deal.index}/${index.toString().padStart(2, '0')}`;
-    if (deal.orders.includes(id)) return this.findIndex(index + 1, deal);
-    else return id;
   }
 }

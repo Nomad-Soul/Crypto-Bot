@@ -119,8 +119,8 @@ export default class Strategy {
   balanceCheck(volumeQuote) {
     if (typeof this.currentPrice === 'undefined') this.currentPrice = this.bot.getPrice(this.pairData.id);
     var accountClient = this.bot.getClient(this.botSettings.account);
-    var availableBalance = accountClient.getBalance(this.pairData.quoteCurrency);
-    volumeQuote ??= this.botSettings.maxVolumeEur;
+    var availableBalance = accountClient.getBalance(this.pairData.quote);
+    volumeQuote ??= this.botSettings.maxVolumeQuote;
     var balanceCheck = availableBalance >= volumeQuote;
 
     var maxQuoteDigits = this.pairData.maxQuoteDigits;
@@ -132,11 +132,11 @@ export default class Strategy {
 
     try {
       this.logStatus(
-        `Order for ${volumeQuote.toFixed(maxQuoteDigits)} ${this.botSettings.quoteCurrency} (${(volumeQuote / this.currentPrice).toFixed(this.pairData.maxBaseDigits)} ${this.pairData.baseCurrency}) ${balanceCheck ? greenBright`can` : redBright`cannot`} be executed at current market price`,
+        `Order for ${volumeQuote.toFixed(maxQuoteDigits)} ${this.botSettings.quote} (${(volumeQuote / this.currentPrice).toFixed(this.pairData.maxBaseDigits)} ${this.pairData.base}) ${balanceCheck ? greenBright`can` : redBright`cannot`} be executed at current market price`,
       );
 
       this.logStatus(
-        `${this.pairData.id}: ${yellowBright`${this.currentPrice.toFixed(maxQuoteDigits)}`} Available: ${yellowBright`${availableBalance.toFixed(maxQuoteDigits)} ${this.pairData.quoteCurrency}`}`,
+        `${this.pairData.id}: ${yellowBright`${this.currentPrice.toFixed(maxQuoteDigits)}`} Available: ${yellowBright`${availableBalance.toFixed(maxQuoteDigits)} ${this.pairData.quote}`}`,
       );
     } catch (e) {
       App.warning('Unexpected error in balanceCheck');
@@ -148,11 +148,11 @@ export default class Strategy {
   }
 
   volumeCheck(volume) {
-    var availableBalance = this.accountClient.getBalance(this.pairData.baseCurrency);
+    var availableBalance = this.accountClient.getBalance(this.pairData.base);
     var volumeCheck = availableBalance >= volume;
     var colour = volumeCheck ? greenBright : redBright;
     this.logStatus(
-      `${this.pairData.id}: Requested ${yellowBright`${volume.toFixed(this.pairData.maxBaseDigits)}`} Available: ${colour`${availableBalance.toFixed(this.pairData.maxBaseDigits)} ${this.pairData.baseCurrency}`}`,
+      `${this.pairData.id}: Requested ${yellowBright`${volume.toFixed(this.pairData.maxBaseDigits)}`} Available: ${colour`${availableBalance.toFixed(this.pairData.maxBaseDigits)} ${this.pairData.base}`}`,
     );
     return volumeCheck;
   }

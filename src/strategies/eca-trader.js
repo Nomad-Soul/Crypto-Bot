@@ -1,7 +1,7 @@
 import App from '../app.js';
 import Utils from '../utils.js';
 import Action from '../data/action.js';
-import { yellowBright, cyanBright, redBright, greenBright } from 'ansis';
+import { yellowBright, cyanBright, redBright, greenBright, magentaBright } from 'ansis';
 import DealPlanner from './deal-planner.js';
 import TraderDeal from '../data/trader-deal.js';
 import CryptoBot from '../crypto-bot.js';
@@ -43,13 +43,13 @@ export default class EcaTrader extends Strategy {
     this.actions = [];
 
     if (openDeals.length == 0) {
-      if (this.accountClient.getBalance(this.pairData.baseCurrency) > 0) {
+      if (this.accountClient.getBalance(this.pairData.base) > 0) {
         await this.recoverDeal();
         return {
           botId: this.botId,
           requiresNewPlannedOrder: false,
           reason: this.logStatus(
-            `Invalid state: non-zero ${this.pairData.baseCurrency} balance found, likely a previous deal was not closed correctly.`,
+            `Invalid state: non-zero ${this.pairData.base} balance found, likely a previous deal was not closed correctly.`,
             'errorNonBlocking',
           ),
         };
@@ -207,7 +207,7 @@ export default class EcaTrader extends Strategy {
     } else {
       var sellOrder = sellOrders.find((o) => o.status === 'pending');
       // check if the take profit order needs to be adjusted
-      var volumeAvailable = this.accountClient.getBalance(this.pairData.baseCurrency);
+      var volumeAvailable = this.accountClient.getBalance(this.pairData.base);
       var updateTakeProfitOrder = sellOrder.volume != volumeAvailable;
       if (updateTakeProfitOrder) {
         App.warning('Current take profit order volume does not match current availability');
@@ -223,11 +223,12 @@ export default class EcaTrader extends Strategy {
    */
   #checkCompletion(deal) {
     if (deal.isCompleted(this.bot)) {
-      this.logStatus(greenBright`Profit: ${deal.calculateProfit(this.bot).toFixed(2)} ${this.botSettings.quoteCurrency.toUpperCase()}`);
+      this.logStatus(greenBright`Profit: ${deal.calculateProfit(this.bot).toFixed(2)} ${this.botSettings.quote.toUpperCase()}`);
       deal.status = 'closed';
       this.updateDeals();
+      return true;
     }
-    return deal.status;
+    return false;
   }
 
   /**
@@ -237,7 +238,7 @@ export default class EcaTrader extends Strategy {
   createTakeProfitOrder(deal, dealData) {
     var requiresTakeProfitOrder = true;
     var takeProfitOrder = this.dealPlanner.proposeTakeProfitOrder(deal, dealData);
-    var availableBalance = this.accountClient.getBalance(this.botSettings.crypto.toLowerCase());
+    var availableBalance = this.accountClient.getBalance(this.botSettings.base.toLowerCase());
     if (takeProfitOrder.volume < availableBalance) {
       takeProfitOrder.volume = availableBalance;
     }
@@ -351,17 +352,14 @@ export default class EcaTrader extends Strategy {
   }
 
   async startDeal() {
-    var lastDeal = [...this.deals.values()].slice(-1).pop();
-
-    console.log(lastDeal);
-    var baseIndex = lastDeal.buyOrders.length + lastDeal.sellOrders.length - 1;
-    var proposedDeal = this.dealPlanner.proposeDeal(this.bot.getPrice(this.pairData.id), 1, baseIndex);
+    var index = this.deals.size + 1;
+    var proposedDeal = this.dealPlanner.proposeDeal(this.bot.getPrice(this.pairData.id), 1, index);
     var balanceCheck = this.balanceCheck(proposedDeal.balanceRequired);
 
     var status = false;
     var actions = [];
     if (!balanceCheck) {
-      status = await this.requestDeallocation(this.pairData.quoteCurrency, proposedDeal.balanceRequired);
+      status = await this.requestDeallocation(this.pairData.quote, proposedDeal.balanceRequired);
     } else {
       status = true;
       // Ignore sell order until the bot has actually bought something
@@ -373,9 +371,9 @@ export default class EcaTrader extends Strategy {
 
     var result;
     if (actions.length > 0) {
-      this.updateDeals();
       result = await this.bot.executeActions(actions);
       this.deals.set(proposedDeal.deal.id, proposedDeal.deal);
+      this.updateDeals();
     }
 
     return { status: status, actions: actions, result: result };

@@ -227,7 +227,7 @@ async function formatChart(dataset) {
     case 'stackerBot': {
       var botId = Object.values(accounts).find((account) => typeof account.stackingHistory?.botIds != 'undefined').stackingHistory.botIds[0];
       var botData = data[botId];
-      let currencyLabels = [botData.baseCurrency, botData.quoteCurrency];
+      let currencyLabels = [botData.base, botData.quote];
       new Chart(document.getElementById(dataset.chartType), {
         type: 'bar',
         data: {

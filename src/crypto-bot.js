@@ -100,13 +100,15 @@ export default class CryptoBot {
   }
 
   getTraderBotIds() {
-    return Object.values(this.#settings.bots).filter((bot) => bot.strategyType === 'eca-trader');
+    return Object.values(this.#settings.bots)
+      .filter((bot) => bot.strategyType === 'eca-trader')
+      .map((botSettings) => botSettings.id);
   }
 
   /**
    *
    * @param {string} id
-   * @returns {AccountSettings}
+   * @returns {import('./types.js').AccountSettings}
    */
   getAccountSettings(id) {
     return this.#settings.accounts[id];
@@ -387,7 +389,7 @@ export default class CryptoBot {
       if (check.result) {
         switch (check.newStatus) {
           case 'executed': {
-            let message = `[${greenBright`${plannedOrder.id}`}]: order ${greenBright`filled`} at ${plannedOrder.closeDate.toLocaleTimeString(App.locale)} for ${Number(exchangeOrder.price).toFixed(2)} (${Number(exchangeOrder.cost).toFixed(2)} ${botSettings.quoteCurrency})`;
+            let message = `[${greenBright`${plannedOrder.id}`}]: order ${greenBright`filled`} at ${plannedOrder.closeDate.toLocaleTimeString(App.locale)} for ${Number(exchangeOrder.price).toFixed(2)} (${Number(exchangeOrder.cost).toFixed(2)} ${botSettings.quote})`;
             App.log(message, true);
             this.telegramBot.log(message);
             updateFile = true;

@@ -28,7 +28,7 @@ export default class EcaPlanner {
       orders[i] = new EcaOrder({
         botId: this.botId,
         openDate: nextDate,
-        volumeQuote: this.botSettings.maxVolumeEur,
+        volumeQuote: this.botSettings.maxVolumeQuote,
         pair: this.botSettings.pair,
         account: this.botSettings.account,
         userref: this.botSettings.userref,
@@ -60,7 +60,7 @@ export default class EcaPlanner {
       orders[i] = new EcaOrder({
         botId: this.botId,
         openDate: nextDate,
-        volumeQuote: this.botSettings.maxVolumeEur,
+        volumeQuote: this.botSettings.maxVolumeQuote,
         pair: this.botSettings.pair,
         account: this.botSettings.account,
         userref: this.botSettings.userref,

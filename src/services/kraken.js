@@ -529,7 +529,7 @@ export default class KrakenBot extends ClientBase {
    * @param {BotSettings} botSettings
    */
   getPairId(botSettings) {
-    return `${botSettings.crypto}${botSettings.quoteCurrency}`.toLowerCase();
+    return `${botSettings.base}${botSettings.quote}`.toLowerCase();
   }
 
   /**
@@ -607,13 +607,14 @@ export default class KrakenBot extends ClientBase {
    */
   static ConvertKrakenPairData(pair) {
     try {
-      var crypto = PairData.GetAliasCurrency(pair.base);
-      var currency = PairData.GetAliasCurrency(pair.quote);
+      var base = PairData.GetAliasCurrency(pair.base);
+      var quote = PairData.GetAliasCurrency(pair.quote);
       return new PairData({
-        id: `${crypto}/${currency}`,
-        crypto: crypto,
-        nativeCryptoLabel: pair.base,
-        currency: currency,
+        id: `${base}/${quote}`,
+        base: base,
+        quote: quote,
+        nativeBaseId: pair.base,
+        nativeQuoteId: pair.quote,
         minVolume: Number(pair.ordermin),
         maxBaseDigits: pair.lot_decimals,
         maxQuoteDigits: pair.pair_decimals,

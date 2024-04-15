@@ -1,23 +1,27 @@
 import App from '../app.js';
-import EcaStacker from '../strategies/eca-stacker.js';
-import EcaTrader from '../strategies/eca-trader.js';
 import Strategy from '../strategies/strategy.js';
 
 export default class BotSettings {
+  /** @type {string} */
   id;
+  /** @type {string} */
   account;
   /** @type {string} */
   strategyType;
   /** @type {Strategy} */
   strategy;
-  crypto;
+  /** @type {string} */
+  base;
+  /** @type {string} */
+  quote;
+  /** @type {string} */
+  pair;
   active = false;
   maxPrice;
   maxBaseDigits = 8;
   maxQuoteDigits = 2;
   minDisplayDigits = 4;
-  pair;
-  quoteCurrency;
+
   badgeClass;
   options;
   userref;
@@ -27,16 +31,16 @@ export default class BotSettings {
     try {
       this.account = data.account;
       this.strategyType = data.strategy;
-      this.crypto = data.crypto;
+      this.base = data.base;
       this.active = data.active ?? false;
       this.maxBaseDigits = data.maxBaseDigits;
       this.maxQuoteDigits = data.maxQuoteDigits;
       this.maxPrice = data.maxPrice;
       this.minDisplayDigits = data.minDisplayDigits;
       this.minVolume = data.minVolume;
-      this.maxVolumeEur = data.maxVolumeEur;
+      this.maxVolumeQuote = data.maxVolumeQuote;
       this.pair = data.pair;
-      this.quoteCurrency = data.quoteCurrency;
+      this.quote = data.quote;
       this.badgeClass = data.badgeClass;
       this.options = data.options;
       this.userref = data.userref;
@@ -50,16 +54,16 @@ export default class BotSettings {
       id: this.id,
       account: this.account,
       strategy: this.strategyType,
-      crypto: this.crypto,
+      base: this.base,
+      quote: this.quote,
+      pair: this.pair,
       active: this.active ?? false,
       maxBaseDigits: this.maxBaseDigits,
       maxQuoteDigits: this.maxQuoteDigits,
       maxPrice: this.maxPrice,
       minDisplayDigits: this.minDisplayDigits,
       minVolume: this.minVolume,
-      maxVolumeEur: this.maxVolumeEur,
-      pair: this.pair,
-      quoteCurrency: this.quoteCurrency,
+      maxVolumeQuote: this.maxVolumeQuote,
       badgeClass: this.badgeClass,
       options: this.options,
       userref: this.userref,
