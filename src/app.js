@@ -16,7 +16,7 @@ export default class App {
   static DataPath = './json';
 
   static dateNowShort() {
-    return new Date().toLocaleString(App.locale, {
+    return new Date().toLocaleString(App.locale.id, {
       hour: 'numeric',
       minute: 'numeric',
       second: 'numeric',
@@ -27,7 +27,7 @@ export default class App {
   }
 
   static timeNow() {
-    return new Date().toLocaleTimeString(App.locale);
+    return new Date().toLocaleTimeString(App.locale.id);
   }
 
   static log(message, timestamp = false, colorMessage = null) {

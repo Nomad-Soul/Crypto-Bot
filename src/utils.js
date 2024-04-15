@@ -6,7 +6,7 @@ export default class Utils {
    * @returns {string}
    */
   static toShortTime(date) {
-    return date.toLocaleString(App.locale, {
+    return date.toLocaleString(App.locale.id, {
       hour: 'numeric',
       minute: 'numeric',
       second: 'numeric',
