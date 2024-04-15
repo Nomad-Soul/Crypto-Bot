@@ -1,15 +1,17 @@
 import { magentaBright, cyan } from 'ansis';
 import express from 'express';
-const server = express();
 import cron from 'node-cron';
-
+import path from 'path';
 import App from './app.js';
 import Renderer from './render.js';
 import CryptoBot from './crypto-bot.js';
 import EcaTrader from './strategies/eca-trader.js';
 import TradeHistory from './strategies/trade-history.js';
+const __dirname = import.meta.dirname;
+
 App.log('Starting Crypto-Bot v1.0 by NomadSoul', true, magentaBright);
 
+const server = express();
 var bot = new CryptoBot();
 var port = bot.getServerPort();
 var renderer = new Renderer(bot);
@@ -18,6 +20,7 @@ process.env.TZ = bot.getLocalSettings().timezone;
 
 server.use(express.static('web'));
 server.use(express.json());
+server.use('/css', express.static(path.join(__dirname, '../node_modules/bootswatch/dist/darkly')));
 
 App.server = server.listen(port, () => {
   App.log(magentaBright`Crypto-Bot listening on port ${port.toString()}`, true);

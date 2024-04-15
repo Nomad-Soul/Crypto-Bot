@@ -312,7 +312,7 @@ async function submitRequest(command, data) {
 
     let mode = data.mode ?? 'GET';
     mode = mode.toUpperCase();
-    let url = 'crypto/api';
+    let url = 'api';
 
     if (mode === 'GET') {
       url += `?endpoint=${command}`;

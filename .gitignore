@@ -49,5 +49,4 @@ build/*
 json/*
 log/*
 src/tests/*
-web/css/bootstrap.min.css
 json/settings.json
