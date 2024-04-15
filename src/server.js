@@ -89,18 +89,18 @@ server.get('/api', async function (req, res) {
     case 'PurchaseHistory': {
       let botId = req.query['botId'];
       let purchases = new TradeHistory(bot, botId).reportPurchases(bot.getClient('kraken'));
+      let pair = bot.getBotSettings(botId).pair;
       //console.log(purchases);
-      let data = await bot
-        .getClient('kraken')
-        .requestCandleData({ pair: req.query['pair'], interval: req.query['interval'], since: Number(req.query['startDate']) / 1000 });
-      response = { status: 'success', pair: req.query['pair'], request: endpoint, data: data, purchases: purchases, chartType: 'candlestick' };
+      let data = await bot.getClient('kraken').requestCandleData({ pair: pair, interval: req.query['interval'], since: Number(req.query['startDate']) / 1000 });
+      response = { status: 'success', pair: pair, request: endpoint, data: data, purchases: purchases, chartType: 'candlestick' };
       break;
     }
 
     case 'DealPreview': {
       let botId = req.query['botId'];
       let trader = new EcaTrader(bot, botId);
-      var dealResult = trader.dealPlanner.proposeDeal(bot.getPrice(req.query['pair']), 4);
+      let pair = bot.getBotSettings(botId).pair;
+      var dealResult = trader.dealPlanner.proposeDeal(bot.getPrice(pair), 4);
       response = {
         status: 'success',
         request: endpoint,

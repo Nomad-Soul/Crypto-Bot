@@ -31,16 +31,14 @@ async function init() {
     Object.keys(accounts).forEach((account) => {
       accounts[account].balances = new Map();
       var accountData = accounts[account];
-      if (accountData.showDealPreview)
-        receiveData('DealPreview', 'dealPreview', { target: 'api', botId: accountData.showDealPreview.botId, pair: accountData.showDealPreview.pair });
+      if (accountData.showDealPreview) receiveData('DealPreview', 'dealPreview', { target: 'api', botId: accountData.showDealPreview[0] });
       if (accountData.tradeBalance) {
-        receiveData('TradeBalance', 'tradeHistory', { target: 'api', botId: accountData.tradeBalance.botId });
+        receiveData('TradeBalance', 'tradeHistory', { target: 'api', botId: accountData.tradeBalance[0] });
       }
       if (accountData.purchaseHistory) {
         receiveData('PurchaseHistory', 'stats', {
           target: 'api',
           botId: accountData.purchaseHistory.botId,
-          pair: accountData.purchaseHistory.pair,
           interval: accountData.purchaseHistory.interval,
           startDate: new Date(accountData.purchaseHistory.startDate).getTime(),
         });
