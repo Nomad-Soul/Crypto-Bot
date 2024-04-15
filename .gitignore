@@ -46,7 +46,7 @@ dist/*
 build/*
 
 # other
-json/*
 log/*
 src/tests/*
+json/*
 json/settings.json
