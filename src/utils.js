@@ -18,9 +18,9 @@ export default class Utils {
    * @returns {string}
    */
   static toShortDate(date) {
-    return date.toLocaleString(App.locale, {
-      month: '2-digit',
+    return date.toLocaleDateString(App.locale.id, {
       day: '2-digit',
+      month: '2-digit',
       year: 'numeric',
     });
   }
@@ -29,8 +29,7 @@ export default class Utils {
    * @returns {string}
    */
   static toShortDateTime(date) {
-    return date.toLocaleDateString(App.locale, {
-      // you can use undefined as first argument
+    return date.toLocaleDateString(App.locale.id, {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
