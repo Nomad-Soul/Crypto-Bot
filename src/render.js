@@ -336,6 +336,13 @@ export default class Renderer {
    * @param {TraderDeal} openDeal
    */
   renderOpenDeal(openDeal) {
+    if (!openDeal) {
+      return {
+        html: `<div class="bg-dark-container p-md-4 p-2"><div class="row">
+    <h5 class="text-start">No active deals</h5>
+  </div></div>`,
+      };
+    }
     var accountClient = this.#bot.getClient(openDeal.account);
     var botSettings = this.#bot.getBotSettings(openDeal.botId);
     var pairData = accountClient.getPairData(botSettings.pair);

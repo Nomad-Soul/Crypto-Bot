@@ -35,12 +35,6 @@ export default class EcaTrader extends Strategy {
     return openDeals.at(-1);
   }
 
-  test() {
-    var order = this.bot.getPlannedOrder('bot-eth/eur:Jj27UgmDvJqG');
-    order.price = 3007.69;
-    this.editTakeProfitOrder(this.deals.get('krakenBot:ujEZmlET7JLy'), order, this.accountClient.getBalance('eth'));
-  }
-
   async decide() {
     this.dateNow = new Date(Date.now());
     this.currentPrice = this.bot.getPrice(this.pairData.id);
@@ -71,7 +65,9 @@ export default class EcaTrader extends Strategy {
 
       var dealData = this.reportDealStatus(deal);
 
-      this.#checkCompletion(deal);
+      var completed = this.#checkCompletion(deal);
+
+      if (completed) continue;
 
       var plannedOrders = deal.orders.map((id) => this.bot.getPlannedOrder(id));
       for (let i = 0; i < plannedOrders.length; i++) {
@@ -153,13 +149,6 @@ export default class EcaTrader extends Strategy {
   reportDealStatus(deal) {
     if (deal.status != 'open') {
       this.logStatus(`No active orders for ${deal.id}`, 'warning');
-    } else {
-      // this.logStatus(
-      //   `Deal ${deal.id} has ${greenBright`${deal.orders
-      //     .map((id) => this.bot.getPlannedOrder(id))
-      //     .filter((o) => o.isActive)
-      //     .length.toString()}`} active orders`,
-      // );
     }
 
     var dealData = deal.calculateProfitTarget(this.bot, this.botSettings);
@@ -238,6 +227,7 @@ export default class EcaTrader extends Strategy {
       deal.status = 'closed';
       this.updateDeals();
     }
+    return deal.status;
   }
 
   /**
