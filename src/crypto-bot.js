@@ -81,6 +81,7 @@ export default class CryptoBot {
         showDealPreview: account.showDealPreview,
         tradeBalance: account.tradeBalance,
         purchaseHistory: account.purchaseHistory,
+        stackingHistory: account.stackingHistory,
         strategy: account.strategyType,
       };
     });
@@ -365,14 +366,6 @@ export default class CryptoBot {
       });
       return true;
     });
-  }
-  async simulateResponse() {
-    var cbClient = this.getClient('coinbase');
-    var po = this.getPlannedOrder('doge/eur-0002');
-    var action = Action.OrderToAction(po, cbClient.getPairData(po.pair));
-    var txinfo = await cbClient.updatePlannedOrder(po, action);
-    this.updatePlanSchedule();
-    console.log(txinfo);
   }
 
   async checkPendingOrders() {

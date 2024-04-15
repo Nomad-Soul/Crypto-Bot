@@ -13,7 +13,7 @@ export default class EcaOrder {
    */
   closeDate = undefined;
   /** @type {Number} */
-  volumeEur;
+  volumeQuote;
   status = '';
   pair = '';
   botId = '';
@@ -34,7 +34,7 @@ export default class EcaOrder {
     }
 
     this.volume = data.volume;
-    this.volumeEur = data.volumeEur;
+    this.volumeQuote = data.volumeQuote;
 
     if (data.strategy === 'eca-trader') {
       this.price = data.price;
@@ -67,7 +67,7 @@ export default class EcaOrder {
   isValid() {
     try {
       if (this.status === 'planned') {
-        if (typeof this.volumeEur === 'undefined' || this.volumeEur === 0) App.error('Invalid order parameter: {volumeEur}');
+        if (typeof this.volumeQuote === 'undefined' || this.volumeQuote === 0) App.error('Invalid order parameter: {volumeQuote}');
       } else if (typeof this.volume === 'undefined' || this.volume === 0) App.error('Invalid order parameter: {volume}');
       if (typeof this.type === 'undefined') App.error('Invalid order parameter: {type}');
       if (typeof this.pair === 'undefined') throw App.error(`[${this.id}]: Invalid order parameter: {pair}`);

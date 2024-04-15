@@ -184,7 +184,7 @@ export default class EcaStacker extends Strategy {
    * @param {EcaOrder} order
    */
   canSubmit(order) {
-    var balanceCheck = this.balanceCheck(order.volumeEur);
+    var balanceCheck = this.balanceCheck(order.volumeQuote);
     var isToday = order.isScheduledForToday && order.status === 'planned';
 
     return balanceCheck && isToday;
@@ -273,7 +273,7 @@ export default class EcaStacker extends Strategy {
    * @returns {Action}
    */
   marketBuyAction(planOrder, currentPrice, isTest = true) {
-    planOrder.volume = Number(planOrder.volumeEur / currentPrice);
+    planOrder.volume = Number(planOrder.volumeQuote / currentPrice);
     if (planOrder.volume < this.pairData.minVolume) planOrder.volume = this.pairData.minVolume;
 
     planOrder.direction = 'buy';
@@ -295,17 +295,17 @@ export default class EcaStacker extends Strategy {
       order.price = maxPrice;
     }
 
-    order.volume = Number(order.volumeEur / currentPrice);
+    order.volume = Number(order.volumeQuote / currentPrice);
 
     App.log(
-      `Cost: ${order.volumeEur.toFixed(this.pairData.maxQuoteDigits)} Price: ${currentPrice.toFixed(this.pairData.maxQuoteDigits)} -> Volume: ${order.volume.toFixed(this.pairData.maxBaseDigits)}`,
+      `Cost: ${order.volumeQuote.toFixed(this.pairData.maxQuoteDigits)} Price: ${currentPrice.toFixed(this.pairData.maxQuoteDigits)} -> Volume: ${order.volume.toFixed(this.pairData.maxBaseDigits)}`,
     );
 
     if (order.volume < this.pairData.minVolume) {
       order.volume = this.pairData.minVolume;
     }
 
-    order.volumeEur = order.volume * currentPrice;
+    order.volumeQuote = order.volume * currentPrice;
     return Action.LimitAction(order, this.pairData, isTest);
   }
 }

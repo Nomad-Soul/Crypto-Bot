@@ -5,6 +5,7 @@ import CryptoBot from '../crypto-bot.js';
 import Utils from '../utils.js';
 import ClientBase from '../services/client.js';
 import EcaTrader from './eca-trader.js';
+import ExchangeOrder from '../data/exchange-order.js';
 
 export default class TradeHistory {
   /**
@@ -72,6 +73,10 @@ export default class TradeHistory {
     var openDate = orders[0].openDate;
     var closeDate;
 
+    /**
+     *
+     * @param {ExchangeOrder} lastOrder
+     */
     function savePnl(lastOrder) {
       if (verbose) App.log(yellowBright`Profit: ${(proceeds - costBasis).toFixed(2)} (${proceeds.toFixed(2)}:${costBasis.toFixed(2)})`);
       closeDate = prevOrder.closeDate;
@@ -81,7 +86,7 @@ export default class TradeHistory {
         closeDate: closeDate,
         costBasis: Number(costBasis.toFixed(2)),
         proceeds: Number(proceeds.toFixed(2)),
-        currency: 'eur',
+        currency: lastOrder.pair.split('/')[1],
         reliable: balance >= 0 && balance * lastOrder.price < 0.5,
       });
       balance = 0;
@@ -110,10 +115,12 @@ export default class TradeHistory {
       if (order.side === 'sell' && (balance > 2e-8 || balance < 0)) color = redBright;
 
       let localOrder = this.#bot.getPlannedOrderByTxid(order.txid);
-      if (verbose)
+      if (verbose) {
+        var currency = order.pair.split('/')[1].toUpperCase();
         App.log(
-          color`[${order.userref}]: ${Utils.toShortDate(order.closeDate)} ${order.side} [${order.txid} / ${localOrder?.id || 'unknown'}] Vol: ${order.volume.toFixed(8)} / ${balance.toFixed(8)} (${(order.volume * order.price).toFixed(2)} EUR + ${order.fees.toFixed(2)} EUR)`,
+          color`[${order.userref}]: ${Utils.toShortDate(order.closeDate)} ${order.side} [${order.txid} / ${localOrder?.id || 'unknown'}] Vol: ${order.volume.toFixed(8)} / ${balance.toFixed(8)} (${(order.volume * order.price).toFixed(2)} ${currency} + ${order.fees.toFixed(2)} ${currency})`,
         );
+      }
       prevOrder = order;
     }
     savePnl(prevOrder);

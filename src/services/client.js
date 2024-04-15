@@ -333,9 +333,10 @@ export default class ClientBase {
   /**
    *
    * @param {string} filter
+   * @param {string} valueCurrency
    * @returns {Promise<any[] | any>}
    */
-  async requestEarnAllocations(filter) {
+  async requestEarnAllocations(filter, valueCurrency) {
     App.error('not implemented');
   }
 

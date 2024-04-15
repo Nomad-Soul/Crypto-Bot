@@ -9,7 +9,7 @@ export default class Action {
   txid;
   pair;
   volume;
-  volumeEur;
+  volumeQuote;
   price;
   direction;
   account;
@@ -40,7 +40,7 @@ export default class Action {
         this.pair = data.pair;
         this.direction = data.direction;
         this.volume = data.volume;
-        this.volumeEur = data.volumeEur;
+        this.volumeQuote = data.volumeQuote;
         this.type = data.type;
         this.price = data.price;
         break;
@@ -115,7 +115,7 @@ export default class Action {
       command: 'submitOrder',
       pair: pairData.id,
       volume: Number(order.volume).toFixed(pairData.maxBaseDigits),
-      volumeEur: order.volumeEur.toFixed(pairData.maxQuoteDigits),
+      volumeQuote: order.volumeQuote.toFixed(pairData.maxQuoteDigits),
       //price: (currentPrice > 0 ? currentPrice : order.price).toFixed(pairData.maxQuoteDigits),
       direction: order.direction,
       type: 'market',
@@ -141,7 +141,7 @@ export default class Action {
       volume: Number(order.volume).toFixed(pairData.maxBaseDigits),
       type: 'limit',
       price: order.price.toFixed(pairData.maxQuoteDigits),
-      volumeEur: order.volumeEur.toFixed(pairData.maxQuoteDigits),
+      volumeQuote: order.volumeQuote.toFixed(pairData.maxQuoteDigits),
       account: order.account,
       userref: order.userref,
       isTest: isTest,

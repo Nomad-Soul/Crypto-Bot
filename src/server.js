@@ -81,7 +81,7 @@ server.get('/api', async function (req, res) {
       var th = new TradeHistory(bot, botId);
 
       if (botSettings.strategyType === 'eca-trader') {
-        response = { status: 'success', request: endpoint, data: th.calculatePnL(), chartType: 'traderBot' };
+        response = { status: 'success', request: endpoint, data: th.calculatePnL(), chartType: 'traderBot', pair: bot.getBotSettings(botId).pair };
       } else response = { status: 'failed' };
       break;
     }
@@ -93,7 +93,7 @@ server.get('/api', async function (req, res) {
       let data = await bot
         .getClient('kraken')
         .requestCandleData({ pair: req.query['pair'], interval: req.query['interval'], since: Number(req.query['startDate']) / 1000 });
-      response = { status: 'success', request: endpoint, data: data, purchases: purchases, chartType: 'candlestick' };
+      response = { status: 'success', pair: req.query['pair'], request: endpoint, data: data, purchases: purchases, chartType: 'candlestick' };
       break;
     }
 

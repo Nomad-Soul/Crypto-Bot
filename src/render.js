@@ -7,7 +7,7 @@ import TraderDeal from './data/trader-deal.js';
 import Utils from './utils.js';
 
 export default class Renderer {
-  #euro = Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
+  #currency;
   #bot;
 
   /**
@@ -16,6 +16,7 @@ export default class Renderer {
    */
   constructor(bot) {
     this.#bot = bot;
+    this.#currency = Intl.NumberFormat(App.locale, { style: 'currency', currency: bot.appCurrency });
   }
 
   reportMissingOrders() {
@@ -36,7 +37,7 @@ export default class Renderer {
       let botSettings = this.#bot.getBotSettings(order.botId);
       let price = this.#bot.getPrice(botSettings.pair);
       let cost = 0;
-      let volume = order.volumeEur / price;
+      let volume = order.volumeQuote / price;
       let date = order.closeDate ?? order.openDate;
       let dateClass = '';
       let costClass = 'text-warning';
@@ -75,7 +76,7 @@ export default class Renderer {
 
       // order.openDate = exchangeOrder.openDate;
       // order.closeDate = exchangeOrder.closeDate;
-      // order.volumeEur = exchangeOrder.cost;
+      // order.volumeQuote = exchangeOrder.cost;
 
       if (typeof date === 'undefined') date = order.closeDate;
 
@@ -86,7 +87,7 @@ export default class Renderer {
         <div class="col-md-2 col-5 text-start ${dateClass}" title="${Utils.toShortTime(date)}">${Utils.toShortDate(date)}</div>
         <div class="col-md-1 col-2 text-start ${statusClass}">${order.direction}</div>
         <div class="col-md-2 col-3 text-end ${costClass}">${Number(volume).toFixed(4)}</div>
-        <div class="col-md-2 col-4 text-end order-md-1 order-2 ${costClass}">${cost > 0 ? this.#euro.format(cost) : '-'}</div>
+        <div class="col-md-2 col-4 text-end order-md-1 order-2 ${costClass}">${cost > 0 ? this.#currency.format(cost) : '-'}</div>
         <div class="col-md-2 col-4 text-start ${statusClass}" title="${order.txid}" >${status}</div>
         <div class="col-md-2 col-4 text-start text-neutral">${order.account}</div>
     </div>`;
@@ -145,19 +146,22 @@ export default class Renderer {
         ],
         [{ weightedSum: 0, sum: 0 }],
       );
+
+      let pair = botSettings.pair;
+      let pairData = accountClient.getPairData(pair);
       let groupByMonth = exchangeOrders.reduce((groupBy, order) => {
         const month = order.closeDate.toLocaleString(App.locale, { month: 'long' });
-        if (!Object.hasOwn(groupBy, month)) groupBy[month] = { volume: 0, volumeEur: 0, fees: 0 };
+        if (!Object.hasOwn(groupBy, month)) groupBy[month] = { volume: 0, volumeQuote: 0, fees: 0 };
         groupBy[month].volume += order.volume;
-        groupBy[month].volumeEur += order.cost;
+        groupBy[month].volumeQuote += order.cost;
         groupBy[month].fees += order.fees;
         return groupBy;
       }, {});
 
+      groupByMonth.baseCurrency = pairData.baseCurrency;
+      groupByMonth.quoteCurrency = pairData.quoteCurrency;
       dataset.set(botIds[i], groupByMonth);
 
-      let pair = botSettings.pair;
-      let pairData = accountClient.getPairData(pair);
       let currentPrice = Number(this.#bot.getPrice(pair));
 
       let desiredAmount = Math.max(botSettings.maxVolumeEur, pairData.minVolume * currentPrice);
@@ -250,16 +254,16 @@ export default class Renderer {
   renderDealPreviewTotal(orders, accountSettings) {
     const { makerFees, takerFees } = accountSettings;
     var total = orders.reduce((sum, order) => {
-      let volumeCurrency = Number(order.volumeEur);
+      let volumeCurrency = Number(order.volumeQuote);
       let fees = Number(order.fees);
       sum += volumeCurrency + fees;
       return sum;
     }, 0);
 
     let volume = Number(orders[orders.length - 1].volume);
-    let sellCurrency = Number(orders[orders.length - 1].volumeEur);
+    let sellCurrency = Number(orders[orders.length - 1].volumeQuote);
     let sellFees = Number(orders[orders.length - 1].fees);
-    let buyCurrency = Number(orders[0].volumeEur);
+    let buyCurrency = Number(orders[0].volumeQuote);
     let buyFees = Number(orders[0].fees);
     let buyPrice = Number(orders[0].price);
     //App.warning([sellCurrency, makerFees, sellCurrency, buyCurrency, buyFees]);

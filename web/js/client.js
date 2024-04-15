@@ -154,7 +154,7 @@ async function formatChart(dataset) {
         data: {
           datasets: [
             {
-              label: 'BTC/EUR',
+              label: dataset.pair.toUpperCase(),
               data: data,
               order: 0,
             },
@@ -185,12 +185,6 @@ async function formatChart(dataset) {
                 tooltipFormat: 'yyyy MMM dd',
                 unit: 'day',
               },
-
-              // adapters: {
-              //   date: {
-              //     locale: be,
-              //   },
-              // },
             },
           },
         },
@@ -199,13 +193,14 @@ async function formatChart(dataset) {
     }
 
     case 'traderBot': {
+      let pair = dataset.pair.toUpperCase().split('/');
       new Chart(document.getElementById(dataset.chartType), {
         type: 'line',
         data: {
           labels: data.map((item) => item[0]),
           datasets: [
             {
-              label: 'Pnl EUR',
+              label: `Pnl ${pair[1]}`,
               fill: true,
               data: cumulativeSums(data.map((item) => item[1].pnl)),
               pointBackgroundColor: data.map((item) => (item[1].reliable ? 'rgb(54, 162, 235)' : 'rgb(255, 99, 132)')),
@@ -222,7 +217,7 @@ async function formatChart(dataset) {
             },
             title: {
               display: true,
-              text: 'TraderBot cumulative PnL per week (EUR)',
+              text: `TraderBot cumulative PnL per week (${dataset.pair})`,
               font: { size: 14 },
             },
           },
@@ -232,28 +227,29 @@ async function formatChart(dataset) {
     }
 
     case 'stackerBot': {
-      var currencyLabels = ['BTC', 'EUR'];
-
+      var botId = Object.values(accounts).find((account) => typeof account.stackingHistory?.botIds != 'undefined').stackingHistory.botIds[0];
+      var botData = data[botId];
+      let currencyLabels = [botData.baseCurrency, botData.quoteCurrency];
       new Chart(document.getElementById(dataset.chartType), {
         type: 'bar',
         data: {
-          labels: Object.keys(data['btc/eur']),
+          labels: Object.keys(botData).slice(0, 2),
           datasets: [
             {
-              label: 'Btc bought',
+              label: `${currencyLabels[0]} bought`,
               yAxisID: 'y',
               type: 'bar',
               order: 1,
               fill: true,
-              data: Array.from(Object.values(data['btc/eur'])).map((entry) => entry.volume),
+              data: Array.from(Object.values(botData)).map((entry) => entry.volume),
             },
             {
-              label: 'EUR paid',
+              label: `${currencyLabels[0]} paid`,
               type: 'line',
               yAxisID: 'yQuote',
               order: 0,
               fill: true,
-              data: Array.from(Object.values(data['btc/eur'])).map((entry) => entry.volumeEur),
+              data: Array.from(Object.values(botData)).map((entry) => entry.volumeQuote),
             },
           ],
         },
@@ -267,7 +263,7 @@ async function formatChart(dataset) {
           plugins: {
             title: {
               display: true,
-              text: 'BTC bought every month (EUR)',
+              text: `${currencyLabels[0]} bought every month (${currencyLabels[1]})`,
               font: { size: 14 },
             },
             tooltip: {
@@ -359,18 +355,3 @@ async function submitRequest(command, data) {
     console.log(`[${command}]: sent ${mode} request`);
   });
 }
-
-function transparentize(value, opacity) {
-  var alpha = opacity === undefined ? 0.5 : 1 - opacity;
-  return colorLib(value).alpha(alpha).rgbString();
-}
-
-const CHART_COLORS = {
-  red: 'rgb(255, 99, 132)',
-  orange: 'rgb(255, 159, 64)',
-  yellow: 'rgb(255, 205, 86)',
-  green: 'rgb(75, 192, 192)',
-  blue: 'rgb(54, 162, 235)',
-  purple: 'rgb(153, 102, 255)',
-  grey: 'rgb(201, 203, 207)',
-};

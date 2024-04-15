@@ -59,9 +59,7 @@ export default class CoinbaseClient extends ClientBase {
   async requestPairList() {
     App.log(greenBright`Requesting pair list for ${this.id}`);
     return this.submitRequest('products', 'GET', { limit: 500 }).then((r) => {
-      let products = r.data.products.filter((p) => p.quote_currency_id === 'EUR');
-
-      products.forEach((p) => {
+      r.data.products.forEach((p) => {
         let pair = `${p.base_currency_id.toLowerCase()}/${p.quote_currency_id.toLowerCase()}`;
         this.pairs.set(pair, CoinbaseClient.ConvertCoinbasePairData(p));
       });
@@ -247,7 +245,7 @@ export default class CoinbaseClient extends ClientBase {
     if (exchangeOrder.status === 'FILLED') {
       plannedOrder.status = 'executed';
       plannedOrder.closeDate = exchangeOrder.closeDate;
-      plannedOrder.volumeEur = exchangeOrder.cost;
+      plannedOrder.volumeQuote = exchangeOrder.cost;
       result = true;
       newStatus = plannedOrder.status;
     } else result = false;
@@ -371,7 +369,7 @@ export default class CoinbaseClient extends ClientBase {
       case 'limit':
         orderConfig = {
           limit_limit_gtc: {
-            base_size: (action.volumeEur / action.price).toFixed(pairData.maxBaseDigits).toString(),
+            base_size: (action.volumeQuote / action.price).toFixed(pairData.maxBaseDigits).toString(),
             limit_price: action.price.toFixed(4).toString(),
             post_only: true,
           },
@@ -380,7 +378,7 @@ export default class CoinbaseClient extends ClientBase {
       case 'market':
         orderConfig = {
           market_market_ioc: {
-            quote_size: action.volumeEur.toString(),
+            quote_size: action.volumeQuote.toString(),
           },
         };
         break;

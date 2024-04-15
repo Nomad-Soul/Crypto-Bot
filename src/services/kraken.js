@@ -130,20 +130,6 @@ export default class KrakenBot extends ClientBase {
     }
   }
 
-  async testPublic() {
-    let publicWebSocketURL = 'wss://ws.kraken.com/';
-    let publicWebSocketSubscriptionMsg = '{ "event":"subscribe", "subscription":{"name":"trade"},"pair":["XBT/USD"] }';
-
-    /*
-        *MORE PUBLIC WEBSOCKET EXAMPLES
-        
-        let publicWebSocketSubscriptionMsg = "{ "event": "subscribe", "subscription": { "interval": 1440, "name": "ohlc"}, "pair": [ "XBT/EUR"]}";
-        let publicWebSocketSubscriptionMsg = "{ "event": "subscribe", "subscription": { "name": "spread"}, "pair": [ "XBT/EUR","ETH/USD" ]}";
-        */
-
-    await this.OpenAndStreamWebSocketSubscription(publicWebSocketURL, publicWebSocketSubscriptionMsg);
-  }
-
   /**
    *
    * @param {any} data
@@ -312,7 +298,7 @@ export default class KrakenBot extends ClientBase {
         let cryptoAlias = PairData.GetAliasCurrency(pairData.base);
         let currencyAlias = PairData.GetAliasCurrency(pairData.quote);
         let pair = `${cryptoAlias}/${currencyAlias}`;
-        if (currencyAlias === 'eur') this.pairs.set(pair, KrakenBot.ConvertKrakenPairData(pairData));
+        this.pairs.set(pair, KrakenBot.ConvertKrakenPairData(pairData));
       });
       App.writeFile(`${App.DataPath}/exchanges/${this.type}-pairs`, Object.fromEntries([...this.pairs.entries()]));
     });
@@ -424,10 +410,11 @@ export default class KrakenBot extends ClientBase {
   /**
    *
    * @param {string} filter
+   * @param {string} valueCurrency
    * @returns {Promise<any[] | any>}
    */
-  async requestEarnAllocations(filter) {
-    var data = { endpoint: 'Earn/Allocations', converted_asset: 'EUR', hide_zero_allocations: true };
+  async requestEarnAllocations(filter, valueCurrency) {
+    var data = { endpoint: 'Earn/Allocations', converted_asset: valueCurrency.toUpperCase(), hide_zero_allocations: true };
     var response = await this.queryPrivate(data, false, false);
     if (typeof response.items !== 'undefined') {
       App.log(`Received earn allocations for [${this.id}]`);
@@ -525,7 +512,7 @@ export default class KrakenBot extends ClientBase {
     if (exchangeOrder.status === 'closed') {
       plannedOrder.status = 'executed';
       plannedOrder.closeDate = exchangeOrder.closeDate;
-      plannedOrder.volumeEur = exchangeOrder.cost;
+      plannedOrder.volumeQuote = exchangeOrder.cost;
       result = true;
       newStatus = plannedOrder.status;
     } else if (exchangeOrder.status === 'cancelled') {

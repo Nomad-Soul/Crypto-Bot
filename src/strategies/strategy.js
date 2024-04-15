@@ -114,17 +114,17 @@ export default class Strategy {
   }
 
   /**
-   * @param {number} [volumeEur]
+   * @param {number} [volumeQuote]
    */
-  balanceCheck(volumeEur) {
+  balanceCheck(volumeQuote) {
     if (typeof this.currentPrice === 'undefined') this.currentPrice = this.bot.getPrice(this.pairData.id);
     var accountClient = this.bot.getClient(this.botSettings.account);
     var availableBalance = accountClient.getBalance(this.pairData.quoteCurrency);
-    volumeEur ??= this.botSettings.maxVolumeEur;
-    var balanceCheck = availableBalance >= volumeEur;
+    volumeQuote ??= this.botSettings.maxVolumeEur;
+    var balanceCheck = availableBalance >= volumeQuote;
 
     var maxQuoteDigits = this.pairData.maxQuoteDigits;
-    if (isNaN(volumeEur)) {
+    if (isNaN(volumeQuote)) {
       App.warning(`[${this.botId}] V: ${this.pairData.minVolume}`);
       App.printObject(this.botSettings.toJSON());
       return false;
@@ -132,7 +132,7 @@ export default class Strategy {
 
     try {
       this.logStatus(
-        `Order for ${volumeEur.toFixed(maxQuoteDigits)} ${this.botSettings.quoteCurrency} (${(volumeEur / this.currentPrice).toFixed(this.pairData.maxBaseDigits)} ${this.pairData.baseCurrency}) ${balanceCheck ? greenBright`can` : redBright`cannot`} be executed at current market price`,
+        `Order for ${volumeQuote.toFixed(maxQuoteDigits)} ${this.botSettings.quoteCurrency} (${(volumeQuote / this.currentPrice).toFixed(this.pairData.maxBaseDigits)} ${this.pairData.baseCurrency}) ${balanceCheck ? greenBright`can` : redBright`cannot`} be executed at current market price`,
       );
 
       this.logStatus(
@@ -140,7 +140,7 @@ export default class Strategy {
       );
     } catch (e) {
       App.warning('Unexpected error in balanceCheck');
-      console.log([availableBalance, volumeEur, this.currentPrice]);
+      console.log([availableBalance, volumeQuote, this.currentPrice]);
       return false;
     }
 

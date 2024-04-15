@@ -84,7 +84,7 @@ export default class DealPlanner {
       openDate: new Date(Date.now()),
       price: limitPrice,
       volume: volume.toFixed(this.pairData.maxBaseDigits),
-      volumeEur: limitPrice * volume,
+      volumeQuote: limitPrice * volume,
       pair: pair,
       userref: safetyOrders[0].userref,
       account: this.botSettings.account,
@@ -116,7 +116,7 @@ export default class DealPlanner {
         openDate: new Date(Date.now()),
         price: Number(currentPrice),
         volume: Number(volume.toFixed(maxBaseDigits)),
-        volumeEur: initialOrderSize,
+        volumeQuote: initialOrderSize,
         fees: this.takerFee * initialOrderSize,
         account: this.botSettings.account,
         userref: this.botSettings.userref + dealIndex,
@@ -141,7 +141,7 @@ export default class DealPlanner {
           openDate: new Date(Date.now()),
           price: Number(limitPrice),
           volume: Number((safetyOrder / limitPrice).toFixed(maxBaseDigits)),
-          volumeEur: safetyOrder,
+          volumeQuote: safetyOrder,
           fees: this.makerFee * safetyOrder,
           account: this.botSettings.account,
           userref: this.botSettings.userref + dealIndex,
@@ -168,7 +168,7 @@ export default class DealPlanner {
         openDate: Date.now(),
         price: Number(targetProfit.toFixed(2)),
         volume: Number(orders[0].volume.toFixed(maxBaseDigits)),
-        volumeEur: Number(sellVolume.toFixed(maxQuoteDigits)),
+        volumeQuote: Number(sellVolume.toFixed(maxQuoteDigits)),
         fees: this.makerFee * sellVolume,
         account: this.botSettings.account,
         userref: this.botSettings.userref + dealIndex,
@@ -209,7 +209,7 @@ export default class DealPlanner {
 
     var accountClient = this.#bot.getClient(this.botSettings.account);
     var volume = accountClient.getBalance(this.botSettings.crypto);
-    var volumeEur = volume * targetPrice;
+    var volumeQuote = volume * targetPrice;
     var pnl = (targetPrice - averagePrice) * volume;
 
     App.log(
@@ -229,8 +229,8 @@ export default class DealPlanner {
       openDate: Date.now(),
       price: Number(targetPrice.toFixed(this.pairData.maxQuoteDigits)),
       volume: volume,
-      volumeEur: Number(volumeEur.toFixed(this.pairData.maxQuoteDigits)),
-      fees: Number((this.makerFee * volumeEur).toFixed(this.pairData.maxQuoteDigits)),
+      volumeQuote: Number(volumeQuote.toFixed(this.pairData.maxQuoteDigits)),
+      fees: Number((this.makerFee * volumeQuote).toFixed(this.pairData.maxQuoteDigits)),
       account: this.botSettings.account,
       userref: deal.index,
       pair: this.botSettings.pair,

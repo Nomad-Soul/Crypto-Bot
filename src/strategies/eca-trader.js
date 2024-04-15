@@ -342,7 +342,7 @@ export default class EcaTrader extends Strategy {
    */
   canSubmit(order) {
     if (order.direction === 'buy') {
-      var balanceCheck = this.balanceCheck(order.volumeEur);
+      var balanceCheck = this.balanceCheck(order.volumeQuote);
       return balanceCheck && order.isScheduledForToday;
     } else {
       var volumeCheck = this.volumeCheck(order.volume);
@@ -388,8 +388,8 @@ export default class EcaTrader extends Strategy {
    */
   async requestDeallocation(currency, amount) {
     var accountClient = this.bot.getClient(this.botSettings.account);
-    var response = await accountClient.requestEarnAllocations(currency);
-    console.log(response);
+    var response = await accountClient.requestEarnAllocations(currency, this.bot.appCurrency);
+    App.log(response);
 
     var allocation = response.find((item) => item.asset.toLowerCase() === currency);
 
