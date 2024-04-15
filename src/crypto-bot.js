@@ -63,7 +63,9 @@ export default class CryptoBot {
       }
     });
 
-    this.#activeBots = [...Object.keys(this.#settings.bots)];
+    this.#activeBots = Object.values(this.#settings.bots)
+      .filter((bot) => bot.active)
+      .map((bot) => bot.id);
   }
 
   /**
