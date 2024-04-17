@@ -357,7 +357,7 @@ export default class Renderer {
     let closedOrders = orders
       .filter((order) => order.isClosed)
       .sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime())
-      .map((order) => this.#bot.getExchangeOrderFromPlannedOrderId(order.id, openDeal.account));
+      .map((order) => this.#bot.getLocalExchangeOrderFromPlannedOrderId(order.id, openDeal.account));
     let nextBuyOrder = orders.find((order) => !order.isClosed && order.direction === 'buy') ?? dealPlanner.calculateSafetyOrder(openDeal);
     let takeProfitOrder = openDeal.sellOrders[0] ? this.#bot.getPlannedOrder(openDeal.sellOrders[0]) : dealPlanner.proposeTakeProfitOrder(openDeal);
 
@@ -371,18 +371,18 @@ export default class Renderer {
       currentPrice > averagePrice
         ? (50 * (currentPrice - averagePrice)) / (takeProfitPrice - averagePrice)
         : (50 * (currentPrice - averagePrice)) / (averagePrice - safetyOrderPrice);
-    let widthLoss = Math.min(widthPnL < 0 ? Math.abs(widthPnL / 2) : 0, 50);
+    let widthLoss = Math.min(widthPnL < 0 ? Math.abs(widthPnL) : 0, 50);
     let widthSafety = widthPnL < 0 ? 50 - widthLoss : 50;
 
     let widthProfit = widthPnL < 0 ? 0 : widthPnL;
 
     let volumeProfit = Number(takeProfitOrder.volume);
-    let volumeProfitEur = volumeProfit * takeProfitPrice;
-    let volumeSafetyEur = Number(nextBuyOrder.volume * safetyOrderPrice);
+    let volumeProfitQuote = volumeProfit * takeProfitPrice;
+    let volumeSafetyQuote = Number(nextBuyOrder.volume * safetyOrderPrice);
     let pnlType = widthPnL < 0 ? 'text-danger' : 'text-success';
     let pnlPercent = (100 * (currentPrice - averagePrice)) / averagePrice;
     let pnlValue = volumeProfit * currentPrice - averagePrice * volumeProfit;
-    let profitPotential = volumeProfitEur - volumeProfit * averagePrice - volumeProfitEur * 0.0016;
+    let profitPotential = volumeProfitQuote - volumeProfit * averagePrice - volumeProfitQuote * 0.0016;
     let profitPercent = 100 * ((takeProfitPrice - averagePrice) / averagePrice - 0.0016);
 
     let labelLoss = widthPnL < 0 ? currentPrice : '';
@@ -392,7 +392,12 @@ export default class Renderer {
 
     let dealTemplate = `
     <div class="bg-dark-container p-md-4 p-2"><div class="row">
-      <h5 class="text-start">Active <span class="text-info">${pairData.id}</span> deal: <code>${openDeal.id}</code> </h5>
+      <div class="col-9">
+        <h5 class="text-start">Active <span class="text-info">${pairData.id}</span> deal: <code>${openDeal.id}</code> </h5>
+      </div>
+      <div class="col-3 text-end text-neutral">
+        <h5>${Utils.timeToHoursOrDaysText(orders.at(0).hoursElapsed())} old</h5>
+      </div>
     </div>
       <div class="row">
           <div class="col-4 text-start">${safetyOrderPrice.toFixed(2)}</div>
@@ -402,13 +407,9 @@ export default class Renderer {
       <div class="row">
           <div class="col">
               <div class="progress">
-                  <div class="progress-bar bg-secondary" role="progressbar" style="width: ${widthSafety}%" aria-valuenow="${widthSafety}" aria-valuemin="0" aria-valuemax="100"></div>
-                  <div class="progress-bar bg-danger text-start" role="progressbar" style="width: ${widthLoss}% overflow:visible" aria-valuenow="${widthLoss}" aria-valuemin="0" aria-valuemax="100">${
-                    labelLoss !== '' ? labelLoss.toFixed(2) : ''
-                  }</div>
-                  <div class="progress-bar bg-success text-end" role="progressbar" style="width: ${widthProfit}% overflow:visible" aria-valuenow="${widthProfit}" aria-valuemin="0" aria-valuemax="100">${
-                    labelProfit !== '' ? labelProfit.toFixed(2) : ''
-                  }</div>
+                  <div class="progress-bar bg-secondary" role="progressbar" style="width: ${widthSafety.toFixed(4)}%" aria-valuenow="${widthSafety.toFixed(4)}" aria-valuemin="0" aria-valuemax="100"></div>
+                  <div class="progress-bar bg-danger text-start" role="progressbar" style="width: ${widthLoss.toFixed(4)}%; overflow:visible" aria-valuenow="${widthLoss.toFixed(4)}" aria-valuemin="0" aria-valuemax="100">${labelLoss !== '' ? labelLoss.toFixed(pairData.maxQuoteDigits) : ''}</div>
+                  <div class="progress-bar bg-success text-end" role="progressbar" style="width: ${widthProfit.toFixed(4)}%; overflow:visible" aria-valuenow="${widthProfit.toFixed(4)}" aria-valuemin="0" aria-valuemax="100">${labelProfit !== '' ? labelProfit.toFixed(pairData.maxQuoteDigits) : ''}</div>
               </div>
           </div>
       </div>
