@@ -40,7 +40,7 @@ export default class Strategy {
     this.#bot = bot;
     this.botId = botId;
     this.botSettings = bot.getBotSettings(botId);
-    this.accountClient = this.bot.getClient(this.botSettings.account);
+    this.accountClient = this.#bot.getClient(this.botSettings.account);
     this.pairData = this.accountClient.getPairData(this.botSettings.pair);
   }
 

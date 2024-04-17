@@ -61,10 +61,8 @@ export default class EcaTrader extends Strategy {
       var deal = openDeals[i];
       this.logStatus(`Processing [${cyanBright`${this.botId}`}]: ${deal.id}`, 'infoTimestamp');
 
-      if (deal.status === 'closed') return;
-
+      await deal.refreshExchangeOrders(this.bot);
       var dealData = this.reportDealStatus(deal);
-
       var completed = this.#checkCompletion(deal);
 
       if (completed) continue;
@@ -88,6 +86,7 @@ export default class EcaTrader extends Strategy {
       if (this.checkDealIntegrity(deal, dealData)) {
         App.warning(`Orders added to ${deal.id}`);
       }
+
       this.checkDealFlags(deal);
     }
 
@@ -145,6 +144,7 @@ export default class EcaTrader extends Strategy {
   /**
    *
    * @param {TraderDeal} deal
+   * @returns {import('../types.js').DealData}
    */
   reportDealStatus(deal) {
     if (deal.status != 'open') {
@@ -166,8 +166,8 @@ export default class EcaTrader extends Strategy {
   }
 
   /**
-   *
    * @param {TraderDeal} deal
+   * @param {import("../types.js").DealData} dealData
    */
   checkDealIntegrity(deal, dealData) {
     var ordersAdded = false;
@@ -208,12 +208,25 @@ export default class EcaTrader extends Strategy {
       var sellOrder = sellOrders.find((o) => o.status === 'pending');
       // check if the take profit order needs to be adjusted
       var volumeAvailable = this.accountClient.getBalance(this.pairData.base);
-      var updateTakeProfitOrder = sellOrder.volume != volumeAvailable;
+      var volumeMatch = sellOrder.volume === volumeAvailable;
+      var priceMatch = dealData.targetPrice === sellOrder.price;
+      var updateTakeProfitOrder = !volumeMatch || !priceMatch;
       if (updateTakeProfitOrder) {
-        App.warning('Current take profit order volume does not match current availability');
-        this.editTakeProfitOrder(deal, sellOrder, volumeAvailable);
+        App.printObject(sellOrder);
+        console.log(sellOrder.price);
+        console.log();
+        App.log(
+          `Current take profit order volume ${volumeMatch ? `${greenBright`matches`}` : `${redBright`does not match`}`} volume available: ${sellOrder.volume.toFixed(this.pairData.maxBaseDigits)}/${volumeAvailable.toFixed(this.pairData.maxBaseDigits)}`,
+        );
+        App.log(
+          `Current take profit order price ${priceMatch ? `${greenBright`matches`}` : `${redBright`does not match`}`} proposed target price: ${sellOrder.price.toFixed(this.pairData.maxBaseDigits)}/${dealData.targetPrice.toFixed(this.pairData.maxBaseDigits)}`,
+        );
+        this.editTakeProfitOrder(deal, sellOrder, volumeAvailable, dealData);
       }
     }
+
+    App.warning(`requiresTPO: ${requiresTakeProfitOrder}`);
+
     return ordersAdded;
   }
 
@@ -251,19 +264,18 @@ export default class EcaTrader extends Strategy {
   }
 
   /**
-   *
    * @param {TraderDeal} deal
    * @param {EcaOrder} sellOrder
    * @param {number} volumeAvailable
+   * @param {import("../types.js").DealData} dealData
    */
-  editTakeProfitOrder(deal, sellOrder, volumeAvailable) {
+  editTakeProfitOrder(deal, sellOrder, volumeAvailable, dealData) {
     var editTakeProfitOrder = true;
     App.log(
       `Order volume: ${yellowBright`${sellOrder.volume.toFixed(this.pairData.maxBaseDigits)}`} Available: ${yellowBright`${volumeAvailable.toFixed(this.pairData.maxBaseDigits)}`}`,
     );
 
-    var dealData = deal.calculateProfitTarget(this.bot, this.botSettings);
-    sellOrder.price = dealData.targetPrice + 1;
+    sellOrder.price = dealData.targetPrice;
     sellOrder.volume = volumeAvailable;
     this.setFlag({ editTakeProfitOrder }, sellOrder);
   }
@@ -273,9 +285,9 @@ export default class EcaTrader extends Strategy {
    * @param {EcaOrder} waitingOrder
    * @param {TraderDeal} deal
    */
-  processWaitingOrder(waitingOrder, deal) {
+  async processWaitingOrder(waitingOrder, deal) {
     if (waitingOrder.direction === 'sell') {
-      var dealData = this.reportDealStatus(deal);
+      var dealData = await this.reportDealStatus(deal);
       var targetPrice = dealData.targetPrice;
       var submitWaitingSellOrder = this.currentPrice > targetPrice;
 
@@ -486,7 +498,6 @@ export default class EcaTrader extends Strategy {
     // console.log(ordersWithPlannedOrder.map((o) => o.txid));
     // var deals = [...this.deals.values()];
     // var ordersNotInDeal = orders.filter(o=> deals.every(deal => deal.hasOrder())
-
     App.warning('----- end -----');
   }
 }

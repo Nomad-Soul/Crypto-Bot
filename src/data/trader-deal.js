@@ -4,6 +4,7 @@ import BotSettings from './bot-settings.js';
 import App from '../app.js';
 import CryptoBot from '../crypto-bot.js';
 import { nanoid } from 'nanoid';
+import ExchangeOrder from './exchange-order.js';
 
 export default class TraderDeal {
   id;
@@ -18,6 +19,9 @@ export default class TraderDeal {
   overrideAveragePrice;
   account;
 
+  /** @type {ExchangeOrder[]} */
+  #exchangeOrders;
+
   constructor(data) {
     this.id = data.id ?? `${data.account}:${nanoid(12)}`;
     this.botId = data.botId;
@@ -31,6 +35,24 @@ export default class TraderDeal {
 
   get isOpen() {
     return this.status === 'open';
+  }
+
+  /**
+   *
+   * @param {CryptoBot} bot
+   * @returns
+   */
+  async refreshExchangeOrders(bot) {
+    this.#exchangeOrders = await bot.getExchangeOrdersFromPlannedOrderIds(this.buyOrders, this.account, true);
+  }
+
+  /**
+   *
+   * @param {CryptoBot} bot
+   * @returns
+   */
+  fetchExchangeOrders(bot) {
+    this.#exchangeOrders = bot.getLocalExchangeOrdersFromPlannedOrderIds(this.buyOrders, this.account);
   }
   /**
    *
@@ -65,18 +87,18 @@ export default class TraderDeal {
    * @returns
    */
   calculateCostBasis(bot) {
-    let sumValue = this.buyOrders
-      .map((id) => bot.getPlannedOrder(id))
-      .filter((order) => order.isClosed)
-      .map((order) => bot.getExchangeOrderFromPlannedOrderId(order.id, this.account))
-      .reduce((sv, order) => {
-        if (typeof order === 'undefined') {
-          App.warning(`Missing local order in deal ${this.id}`);
-          return sv;
-        }
-        sv += order.volume * order.price + order.fees;
+    if (!this.#exchangeOrders) this.fetchExchangeOrders(bot);
+    var exchangeOrders = this.#exchangeOrders;
+
+    var sumValue = exchangeOrders.reduce((sv, order) => {
+      if (typeof order === 'undefined') {
+        App.warning(`Missing local order in deal ${this.id}`);
         return sv;
-      }, 0);
+      } else if (!order.isClosed) return sv;
+
+      sv += order.volume * order.price + order.fees;
+      return sv;
+    }, 0);
 
     let sumWeights = this.#sumVolume(bot);
     var averagePrice = sumValue / sumWeights;
@@ -135,7 +157,7 @@ export default class TraderDeal {
   calculateProfit(bot) {
     var { averagePrice, costBasis } = this.calculateCostBasis(bot);
     var profit = this.sellOrders.reduce((profit, id) => {
-      let order = bot.getExchangeOrderFromPlannedOrderId(id, this.account);
+      let order = bot.getLocalExchangeOrderFromPlannedOrderId(id, this.account);
       if (order.status === 'open') return profit;
       profit += order.volume * order.price - order.fees - costBasis;
       return profit;

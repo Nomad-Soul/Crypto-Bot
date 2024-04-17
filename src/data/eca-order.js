@@ -13,6 +13,8 @@ export default class EcaOrder {
    */
   closeDate = undefined;
   /** @type {Number} */
+  volume;
+  /** @type {Number} */
   volumeQuote;
   status = '';
   pair = '';
@@ -33,7 +35,7 @@ export default class EcaOrder {
       this.closeDate = new Date(data.closeDate);
     }
 
-    this.volume = data.volume;
+    this.volume = Number(data.volume);
     this.volumeQuote = data.volumeQuote;
 
     if (data.strategy === 'eca-trader') {
@@ -52,12 +54,15 @@ export default class EcaOrder {
 
   /**
    *
-   * @param {Date} dateNow
+   * @param {Date| undefined} dateEnd
    * @param {boolean} useCloseTime
    * @returns {number}
    */
-  hoursElapsed(dateNow, useCloseTime = true) {
-    return Number(Math.abs(dateNow.getTime() - (useCloseTime ? this.closeDate : this.openDate).getTime()) / (60 * 60 * 1000));
+  hoursElapsed(dateEnd = undefined, useCloseTime = true) {
+    var date;
+    if (!dateEnd) date = Date.now();
+    else date = dateEnd.getTime();
+    return Number(Math.abs(date - (useCloseTime ? this.closeDate : this.openDate).getTime()) / (60 * 60 * 1000));
   }
 
   /**

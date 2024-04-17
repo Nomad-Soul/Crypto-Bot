@@ -289,9 +289,47 @@ export default class CryptoBot {
    * @param {string} account
    * @returns
    */
-  getExchangeOrderFromPlannedOrderId(id, account) {
+  getLocalExchangeOrderFromPlannedOrderId(id, account) {
     var accountClient = this.getClient(account);
     return accountClient.getLocalOrder(this.getPlannedOrder(id).txid);
+  }
+
+  async getExchangeOrderFromPlannedOrderId(id, account, redownload = false) {
+    var accountClient = this.getClient(account);
+    return accountClient.getExchangeOrder(this.getPlannedOrder(id).txid, redownload);
+  }
+
+  /**
+   *
+   * @param {string[]} ids
+   * @param {string} account
+   * @param {boolean} redownload
+   */
+  async getExchangeOrdersFromPlannedOrderIds(ids, account, redownload = false) {
+    var accountClient = this.getClient(account);
+
+    var exchangeOrders = ids
+      .map((id) => this.getPlannedOrder(id))
+      .filter((order) => order.txid)
+      .map((order) => accountClient.getExchangeOrder(order.txid, redownload));
+
+    return Promise.all(exchangeOrders);
+  }
+
+  /**
+   *
+   * @param {string[]} ids
+   * @param {string} account
+   */
+  getLocalExchangeOrdersFromPlannedOrderIds(ids, account) {
+    var accountClient = this.getClient(account);
+
+    var exchangeOrders = ids
+      .map((id) => this.getPlannedOrder(id))
+      .filter((order) => order.txid)
+      .map((order) => accountClient.getLocalOrder(order.txid));
+
+    return exchangeOrders;
   }
 
   /**

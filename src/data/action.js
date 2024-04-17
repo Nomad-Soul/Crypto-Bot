@@ -87,7 +87,6 @@ export default class Action {
    * @param {EcaOrder} order
    */
   static ReplaceAction(order, pairData, isTest = false) {
-    console.log(order);
     return new Action({
       command: 'editOrder',
       id: order.id,
@@ -97,6 +96,7 @@ export default class Action {
       price: order.price.toFixed(pairData.maxQuoteDigits),
       volume: order.volume.toFixed(pairData.maxBaseDigits),
       type: order.type,
+      direction: order.direction,
       isTest: isTest,
     });
   }

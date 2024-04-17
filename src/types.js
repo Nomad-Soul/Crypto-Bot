@@ -9,3 +9,11 @@
  * @property {boolean} active
  * @property {string[]} watchBalance;
  */
+
+/**
+ * @typedef {Object} DealData
+ * @property {number} averagePrice
+ * @property {number} costBasis
+ * @property {number} targetPrice
+ * }
+ */

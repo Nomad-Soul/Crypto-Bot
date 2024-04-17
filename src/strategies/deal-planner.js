@@ -59,7 +59,7 @@ export default class DealPlanner {
     let safetyOrder = this.safetyOrder;
     let priceDeviation = this.priceDeviation;
     let safetyOrders = openDeal.buyOrders
-      .map((id) => this.#bot.getExchangeOrderFromPlannedOrderId(id, this.botSettings.account))
+      .map((id) => this.#bot.getLocalExchangeOrderFromPlannedOrderId(id, this.botSettings.account))
       .filter((o) => o && !o.isOpen)
       .sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime());
 
@@ -236,7 +236,6 @@ export default class DealPlanner {
       pair: this.botSettings.pair,
     });
 
-    console.log(sellOrder);
     return sellOrder;
   }
 }

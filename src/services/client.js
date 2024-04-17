@@ -28,7 +28,7 @@ export default class ClientBase {
 
   /**
    *
-   * @param {AccountSettings} accountSettings
+   * @param {import('../types.js').AccountSettings} accountSettings
    */
   constructor(accountSettings) {
     if (this.constructor == ClientBase) {
@@ -189,20 +189,25 @@ export default class ClientBase {
   /**
    *
    * @param {string} orderId
+   * @param {boolean} [redownload=false]
    * @returns {Promise<ExchangeOrder>}
    */
-  async getExchangeOrder(orderId) {
-    if (typeof orderId === 'undefined') App.error(`Requested undefined ${this.id} order`);
+  async getExchangeOrder(orderId, redownload = false) {
+    if (typeof orderId === 'undefined') App.error(`[${orderId}]: Requested undefined ${this.id} order`);
 
-    let order = this.orders.get(orderId) ?? (await this.queryOrder(orderId));
-    this.setExchangeOrder(orderId, order);
+    let order = this.orders.get(orderId);
+
+    if (redownload || !order) order = await this.queryOrder(orderId);
 
     if (typeof order === 'undefined') {
       let errorMsg = `Cannot find ${this.id} order ${orderId}`;
       App.printObject(order);
       App.warning(errorMsg);
       return undefined;
-    } else return this.convertResponseToExchangeOrder(order, orderId);
+    } else {
+      this.setExchangeOrder(orderId, order);
+      return this.convertResponseToExchangeOrder(order, orderId);
+    }
   }
 
   /**
