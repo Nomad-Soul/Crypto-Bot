@@ -6,6 +6,7 @@ import Utils from '../utils.js';
 import ClientBase from '../services/client.js';
 import EcaTrader from './eca-trader.js';
 import ExchangeOrder from '../data/exchange-order.js';
+import TraderDeal from '../data/trader-deal.js';
 
 export default class TradeHistory {
   /**
@@ -78,7 +79,12 @@ export default class TradeHistory {
      * @param {ExchangeOrder} lastOrder
      */
     function savePnl(lastOrder) {
-      if (verbose) App.log(yellowBright`Profit: ${(proceeds - costBasis).toFixed(2)} (${proceeds.toFixed(2)}:${costBasis.toFixed(2)})`);
+      var profit = proceeds - costBasis;
+      if (verbose) {
+        var colour = profit > 0 ? greenBright : redBright;
+        if (profit > 100) colour = magentaBright;
+        App.log(colour`Profit: ${profit.toFixed(2)} (${proceeds.toFixed(2)}:${costBasis.toFixed(2)})`);
+      }
       closeDate = prevOrder.closeDate;
       dataDeals.push({
         index: dealIndex++,
@@ -134,30 +140,119 @@ export default class TradeHistory {
     var data = App.readFileSync(`${App.DataPath}/${account}/${account}-data.json`);
 
     App.warning(`Analysing ${data.length} trades`);
-    for (let i = 0; i < data.length; i++) {
-      var trade = data[i];
+
+    /**
+     *
+     * @param {TradeData} trade
+     * @returns
+     */
+    function groupByWeek(trade) {
       var closeDate = new Date(trade.closeDate);
       var weekNumber = Utils.getWeekNumber(closeDate);
       var weekYear = Utils.getWeekYear(closeDate);
       var label = `${weekYear}-${weekNumber.toString().padStart(2, '0')}`;
+      return label;
+    }
+
+    /**
+     *
+     * @param {TradeData} trade
+     * @returns
+     */
+    function groupByMonth(trade) {
+      var closeDate = new Date(trade.closeDate);
+      const month = new Date(trade.closeDate).toLocaleString(App.locale.id, { month: '2-digit' });
+      return `${closeDate.getFullYear()}-${month}`;
+    }
+
+    var groupByFunction;
+    var fillFunction;
+
+    switch (timeInterval) {
+      default:
+      case 'week':
+        groupByFunction = groupByWeek;
+        fillFunction = this.#fillMissingWeeks;
+        break;
+
+      case 'month':
+        groupByFunction = groupByMonth;
+        fillFunction = this.#fillMissingMonths;
+        break;
+    }
+
+    for (let i = 0; i < data.length; i++) {
+      var trade = data[i];
+      var label = groupByFunction(trade);
       if (!dataset.has(label)) dataset.set(label, { pnl: 0, reliable: true });
       var currentValue = dataset.get(label).pnl;
       dataset.set(label, { pnl: currentValue + trade.proceeds - trade.costBasis, reliable: trade.reliable });
     }
     // console.log(dataset);
 
-    return this.fillMissingIntervals('week', dataset);
+    return fillFunction(dataset);
   }
 
   /**
    *
-   * @param {string} timeInterval Not implemented yet
    * @param {Map<string, TradeData>} dataset
    */
-  fillMissingIntervals(timeInterval = 'week', dataset) {
+  #fillMissingMonths(dataset) {
+    function countMonths(startDate, endDate) {
+      var months;
+      var d1 = new Date(startDate);
+      var d2 = new Date(endDate);
+      months = (d2.getFullYear() - d1.getFullYear()) * 12;
+      months -= d1.getMonth();
+      months += d2.getMonth();
+      return months <= 0 ? 0 : months;
+    }
+
+    function endOfMonth(date) {
+      date.setDate(1); // Avoids edge cases on the 31st day of some months
+      date.setMonth(date.getMonth() + 1);
+      date.setDate(0);
+      date.setHours(23);
+      date.setMinutes(59);
+      date.setSeconds(59);
+      return date;
+    }
+
+    var items = [];
+    var trades = [...dataset.keys()];
+    App.warning(trades[0]);
+    var firstTradeArgs = trades[0].split('-');
+    var lastTradeArgs = trades.at(-1).split('-');
+    var startDate = new Date(trades[0]);
+    var endDate = new Date(trades.at(-1));
+    // var firstYear = Number(firstTradeArgs[0]);
+    // var firstMonth = Number(firstTradeArgs[1]);
+    // var lastYear = Number(lastTradeArgs[0]);
+    // var lastMonth = Number(lastTradeArgs[1]);
+
+    var delta = countMonths(startDate, endDate);
+    // console.log([firstYear, firstMonth, lastYear, lastMonth]);
+    var prevDate = startDate;
+    for (let m = 0; m <= delta; m++) {
+      var date = new Date(new Date(prevDate).setMonth(prevDate.getMonth() + m));
+      var label = `${date.getFullYear()}-${date.toLocaleString(App.locale.id, { month: '2-digit' }).toString().padStart(2, '0')}`;
+      console.log(label);
+      if (!dataset.has(label)) {
+        items.push([label, { pnl: 0, reliable: true }]);
+      } else items.push([label, dataset.get(label)]);
+    }
+    console.log(items);
+    return items;
+  }
+
+  /**
+   *
+   * @param {Map<string, TradeData>} dataset
+   */
+  #fillMissingWeeks(dataset) {
     function addMissingEntries(baseIndex, year, count) {
       for (let i = 1; i < count; i++) {
-        let newKey = `${year}-${(baseIndex + i).toString().padStart(2, 0)}`;
+        let newKey = `${year}-${(baseIndex + i).toString().padStart(2, '0')}`;
         items.push([newKey, { pnl: 0, reliable: true }]);
       }
     }

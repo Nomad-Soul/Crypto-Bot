@@ -304,12 +304,6 @@ export default class KrakenBot extends ClientBase {
     });
   }
 
-  async loadPairList() {
-    App.log(greenBright`Loading ${this.id} pair list`);
-    var assets = App.readFileSync(`${App.DataPath}/exchanges/${this.type}-pairs.json`);
-    this.pairs = new Map(Object.entries(assets));
-  }
-
   /**
    * @param {string} status
    */
@@ -587,7 +581,7 @@ export default class KrakenBot extends ClientBase {
     }
     return new ExchangeOrder({
       type: txinfo.descr.ordertype,
-      status: KrakenBot.ConvertKrakenStatusToExchangeOrder(txinfo.status),
+      status: KrakenBot.ConvertKrakenStatusToExchangeOrder(txinfo.status, txinfo),
       side: txinfo.descr.type,
       openDate: new Date(txinfo.opentm * 1000),
       closeDate: txinfo.status === 'open' ? undefined : new Date(txinfo.closetm * 1000),
@@ -626,11 +620,12 @@ export default class KrakenBot extends ClientBase {
     }
   }
 
-  static ConvertKrakenStatusToExchangeOrder(status) {
+  static ConvertKrakenStatusToExchangeOrder(status, txinfo) {
     switch (status) {
       case 'canceled':
         // We use British English but Kraken uses AE
-        return 'cancelled';
+        if (txinfo.reason === 'Out of funds') return 'closed';
+        else return 'cancelled';
       default:
         return status;
     }

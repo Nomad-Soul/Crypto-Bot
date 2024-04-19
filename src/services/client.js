@@ -230,13 +230,10 @@ export default class ClientBase {
     App.error('not implemented');
   }
 
-  async requestPairList() {
+  async requestPairList(saveToFile = true) {
     App.error('not implemented');
   }
 
-  loadPairList() {
-    App.error('not implemented');
-  }
   /**
    * @param {any} response
    * @param {string} orderId
@@ -291,6 +288,12 @@ export default class ClientBase {
    */
   async requestOrders(status, options) {
     App.error('not implemented');
+  }
+
+  async loadPairList() {
+    App.log(greenBright`Loading ${this.id} pair list`);
+    var assets = App.readFileSync(`${App.DataPath}/exchanges/${this.type}-pairs.json`);
+    this.pairs = new Map(Object.entries(assets));
   }
 
   async downloadOrders(status) {

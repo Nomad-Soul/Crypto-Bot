@@ -46,4 +46,8 @@ export default class ExchangeOrder {
   get isClosed() {
     return this.status === 'closed';
   }
+
+  get isCancelled() {
+    return this.status === 'cancelled';
+  }
 }
