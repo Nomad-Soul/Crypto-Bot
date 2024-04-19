@@ -31,16 +31,16 @@ async function init() {
     Object.keys(accounts).forEach((account) => {
       accounts[account].balances = new Map();
       var accountData = accounts[account];
-      if (accountData.showDealPreview) receiveData('DealPreview', 'dealPreview', { target: 'api', botId: accountData.showDealPreview[0] });
+      if (accountData.showDealPreview) receiveData('DealPreview', 'dealPreview', { target: 'api', botId: accountData.showDealPreview[0].botId });
       if (accountData.tradeBalance) {
-        receiveData('TradeBalance', 'tradeHistory', { target: 'api', botId: accountData.tradeBalance[0] });
+        receiveData('TradeBalance', 'tradeHistory', { target: 'api', botId: accountData.tradeBalance[0].botId, groupBy: 'month' });
       }
       if (accountData.purchaseHistory) {
         receiveData('PurchaseHistory', 'stats', {
           target: 'api',
-          botId: accountData.purchaseHistory.botId,
-          interval: accountData.purchaseHistory.interval,
-          startDate: new Date(accountData.purchaseHistory.startDate).getTime(),
+          botId: accountData.purchaseHistory[0].botId,
+          interval: accountData.purchaseHistory[0].interval,
+          startDate: new Date(accountData.purchaseHistory[0].startDate).getTime(),
         });
       }
     });
@@ -218,6 +218,11 @@ async function formatChart(dataset) {
               text: `TraderBot cumulative PnL per week (${dataset.pair})`,
               font: { size: 14 },
             },
+            tooltip: {
+              callbacks: {
+                label: (value) => `${value?.parsed?.y.toFixed(4)} (${data[value.dataIndex][1].pnl})`,
+              },
+            },
           },
         },
       });
@@ -225,7 +230,7 @@ async function formatChart(dataset) {
     }
 
     case 'stackerBot': {
-      var botId = Object.values(accounts).find((account) => typeof account.stackingHistory?.botIds != 'undefined').stackingHistory.botIds[0];
+      var botId = Object.values(accounts).find((account) => typeof account.stackingHistory[0].botId != 'undefined').stackingHistory[0].botId;
       var botData = data[botId];
       let currencyLabels = [botData.base, botData.quote];
       new Chart(document.getElementById(dataset.chartType), {

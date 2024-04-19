@@ -3,10 +3,11 @@ import fs from 'fs';
 import TelegramCryptoBot from './services/telegram-bot.js';
 import fsp from 'fs/promises';
 const orange = hex('#FFAB40');
+const __dirname = import.meta.dirname;
 
 export default class App {
+  static locale = {};
   // eslint-disable-next-line no-control-regex
-  static locale = 'eu';
   static #ansiPattern = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
   static logEntries = [];
   static server;
@@ -161,7 +162,7 @@ export default class App {
    * @param {Date} date
    */
   static toShortTime(date) {
-    return date.toLocaleString(App.locale, {
+    return date.toLocaleString(App.locale.id, {
       hour: 'numeric',
       minute: 'numeric',
       second: 'numeric',
@@ -169,7 +170,7 @@ export default class App {
   }
 
   static toShortDate(date) {
-    return date.toLocaleString(App.locale, {
+    return date.toLocaleString(App.locale.id, {
       month: '2-digit',
       day: '2-digit',
       year: 'numeric',

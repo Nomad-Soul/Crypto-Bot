@@ -151,7 +151,7 @@ export default class Renderer {
       let pair = botSettings.pair;
       let pairData = accountClient.getPairData(pair);
       let groupByMonth = exchangeOrders.reduce((groupBy, order) => {
-        const month = order.closeDate.toLocaleString(App.locale, { month: 'long' });
+        const month = order.closeDate.toLocaleString(App.locale.id, { month: 'long' });
         if (!Object.hasOwn(groupBy, month)) groupBy[month] = { volume: 0, volumeQuote: 0, fees: 0 };
         groupBy[month].volume += order.volume;
         groupBy[month].volumeQuote += order.cost;

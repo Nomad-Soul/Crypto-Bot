@@ -67,12 +67,6 @@ export default class CoinbaseClient extends ClientBase {
     });
   }
 
-  async loadPairList() {
-    App.log(greenBright`Loading ${this.id} pair list`);
-    var pairData = App.readFileSync(`${App.DataPath}/exchanges/${this.type}-pairs.json`);
-    this.pairs = new Map(Object.entries(pairData));
-  }
-
   async submitOrder(action) {
     App.log(`[${action.id}]: submitting ${yellowBright`${action.type} order ${action.direction} at ${action.price} on ${action.exchange}`}`);
     var pairData = this.getPairData(action.pair);
