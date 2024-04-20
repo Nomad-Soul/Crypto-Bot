@@ -1,10 +1,11 @@
 import { redBright, yellowBright, cyanBright, greenBright } from 'ansis';
 import ClientBase from './client.js';
-import ccxt, { Exchange } from 'ccxt';
+import ccxt, { Exchange, kraken } from 'ccxt';
 
 import App from '../app.js';
 import PairData from '../data/pair-data.js';
 import KrakenBot from './kraken.js';
+import Action from '../data/action.js';
 
 export default class ExchangeClient extends ClientBase {
   /** @type {Exchange} */
@@ -59,6 +60,30 @@ export default class ExchangeClient extends ClientBase {
       .then((response) => response.map((candle) => ({ x: candle[0], o: candle[1], h: candle[2], l: candle[3], c: candle[4], vol: candle[5] })));
   }
 
+  /**
+   *
+   * @param {Action} action
+   * @returns
+   */
+  async submitOrder(action) {
+    var order = action.order;
+    App.log(`${greenBright`[${order.id}]: submitting`} ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${action.account}`}`);
+    return this.#ccxtClient.createOrder(order.pair.toUpperCase(), order.type, order.direction, order.volume, order.price);
+  }
+
+  async cancelOrder(action) {
+    var order = action.order;
+    App.log(`${greenBright`[${order.id}]: cancelling`} ${yellowBright`${order.txid}`} on ${action.account}`);
+    return this.#ccxtClient.cancelOrder(order.txid);
+  }
+
+  async editOrder(action) {
+    var order = action.order;
+    App.log(`${greenBright`[${order.id}]: editing`} ${yellowBright`${order.txid}`} on ${action.account}`);
+    App.log(`Edited price: ${order.price} volume: ${order.volume}`);
+    return this.#ccxtClient.editOrder(order.txid, order.pair, order.type, order.direction, order.vol, order.price);
+  }
+
   async requestPairList(saveToFile = true) {
     App.log(greenBright`Requesting pair list for ${this.id}`);
     await this.#ccxtClient.loadMarkets();
@@ -67,7 +92,7 @@ export default class ExchangeClient extends ClientBase {
       .loadMarkets()
       .then((response) =>
         [...Object.entries(response)]
-          .map(([key, pair]) => ExchangeClient.ConvertKrakenPairData(pair, this.#ccxtClient.precisionMode))
+          .map(([key, pair]) => ExchangeClient.ConvertPairData(pair, this.#ccxtClient.precisionMode))
           .filter((pair) => pair.quote.toLowerCase() === App.locale.currency),
       )
       .then((data) => {
@@ -97,6 +122,10 @@ export default class ExchangeClient extends ClientBase {
     return this.#ccxtClient.fetchTickers(pairs).then((data) => Object.entries(data).map(([key, ticker]) => ({ key: ticker.close })));
   }
 
+  /**
+   *
+   * @returns {Promise<[string, number][]>}
+   */
   async requestBalance() {
     App.log(greenBright`Requesting balance from ${this.id}`);
     return this.#ccxtClient
@@ -106,11 +135,34 @@ export default class ExchangeClient extends ClientBase {
   }
 
   /**
+   *
+   * @param {string[]} txidArray
+   * @returns {Promise<>}
+   */
+  async downloadOrdersByTxid(txidArray) {
+    App.log(greenBright`Downloading ${this.id} orders ${yellowBright`${txidArray.join(', ')}`}`, true);
+    //this.#ccxtClient.fetchOrders(pair);
+
+    if (this.#ccxtClient.id === 'kraken') {
+      /** @type {kraken} */
+      var krakenClient = this.#ccxtClient;
+      return krakenClient.fetchOrdersByIds(txidArray).then((orders) =>
+        orders.forEach((order) => {
+          this.setExchangeOrder(order.id, order);
+          return true;
+        }),
+      );
+    } else {
+      Promise.all(txidArray.map((txid) => this.requestOrder(txid))).then((orders) => orders.forEach((order) => this.setExchangeOrder(order.id, order)));
+    }
+  }
+
+  /**
    * @param {any} marketData
    * @returns {PairData}
    * @param {number} precisionMode
    */
-  static ConvertKrakenPairData(marketData, precisionMode) {
+  static ConvertPairData(marketData, precisionMode) {
     return new PairData({
       id: `${marketData.base}/${marketData.quote}`.toLocaleLowerCase(),
       base: marketData.base.toLowerCase(),
@@ -123,6 +175,12 @@ export default class ExchangeClient extends ClientBase {
       minBaseDisplayDigits: ExchangeClient.ConvertPrecision(precisionMode, marketData.limits.amount.min),
     });
   }
+
+  /**
+   *
+   * @param {import('ccxt').Order} order
+   */
+  static ConvertToExchangeOrder(order) {}
 
   /**
    * @param {any} precisionMode

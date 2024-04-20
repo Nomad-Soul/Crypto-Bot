@@ -11,7 +11,7 @@ export default class ClientBase {
   id = 'Abstract Client';
   apiPublicKey;
   apiPrivateKey;
-  /** @type {Map<string, number>} */
+  /** @type {Map<string,number>} */
   balances = new Map();
   pairs = new Map();
   type;
@@ -228,7 +228,8 @@ export default class ClientBase {
   }
 
   /**
-   * @returns {Promise<[string,number][]>}
+   *
+   * @returns {Promise<[string, number][]>}
    */
   async requestBalance() {
     App.error('not implemented');
@@ -317,17 +318,16 @@ export default class ClientBase {
   /**
    *
    * @param {EcaOrder} plannedOrder
-   * @param {Action} action
    * @returns
    */
-  async updatePlannedOrder(plannedOrder, action) {
+  async updatePlannedOrder(plannedOrder) {
     var txinfo = await this.getExchangeOrder(plannedOrder.txid);
 
     if (typeof txinfo === 'undefined') {
       App.printObject(plannedOrder);
       App.warning('Invalid response');
     } else {
-      switch (action.type) {
+      switch (plannedOrder.type) {
         case 'limit':
           plannedOrder.status = 'pending';
           plannedOrder.openDate = txinfo.openDate;
