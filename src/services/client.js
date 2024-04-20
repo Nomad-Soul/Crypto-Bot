@@ -11,6 +11,7 @@ export default class ClientBase {
   id = 'Abstract Client';
   apiPublicKey;
   apiPrivateKey;
+  /** @type {Map<string, number>} */
   balances = new Map();
   pairs = new Map();
   type;
@@ -226,8 +227,12 @@ export default class ClientBase {
     App.error('not implemented');
   }
 
+  /**
+   * @returns {Promise<[string,number][]>}
+   */
   async requestBalance() {
     App.error('not implemented');
+    return;
   }
 
   async requestPairList(saveToFile = true) {

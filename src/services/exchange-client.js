@@ -26,6 +26,7 @@ export default class ExchangeClient extends ClientBase {
     this.#krakenClient = new KrakenBot(accountSettings);
     this.id = 'ccxt';
     this.requestTickers(['btc/eur'.toUpperCase()]).then((response) => console.log(response));
+    this.requestBalance().then((r) => console.log(r));
   }
 
   async test() {
@@ -94,6 +95,14 @@ export default class ExchangeClient extends ClientBase {
   async requestTickers(pairs) {
     App.log(greenBright`Updating prices from ${this.id}`);
     return this.#ccxtClient.fetchTickers(pairs).then((data) => Object.entries(data).map(([key, ticker]) => ({ key: ticker.close })));
+  }
+
+  async requestBalance() {
+    App.log(greenBright`Requesting balance from ${this.id}`);
+    return this.#ccxtClient
+      .fetchBalance()
+      .then((balances) => Object.entries(balances.total).forEach((balance) => this.balances.set(balance[0].toLowerCase(), balance[1])))
+      .then(() => [...this.balances.entries()]);
   }
 
   /**
