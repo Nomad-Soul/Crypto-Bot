@@ -4,6 +4,11 @@ import { nanoid } from 'nanoid';
 
 export default class EcaOrder {
   static counter = 0;
+  static OrderTypes = {
+    market: 'market',
+    limit: 'limit',
+  };
+
   id = '';
   userref = 0;
   strategy = 'eca-stacker';
@@ -21,7 +26,10 @@ export default class EcaOrder {
   botId = '';
   account = '';
   txid = '';
+  /** @type {string} */
   type;
+  /** @type {string} */
+  direction;
 
   constructor(data) {
     if (typeof data === 'undefined') data = {};

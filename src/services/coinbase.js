@@ -358,7 +358,6 @@ export default class CoinbaseClient extends ClientBase {
    */
   static ActionToCoinbaseOrder(action, pairData) {
     var orderConfig = {};
-    action.performChecks();
 
     switch (action.type) {
       case 'limit':

@@ -4,45 +4,16 @@ import PairData from './pair-data.js';
 
 export default class Action {
   command;
-  id;
-  userref;
-  txid;
-  pair;
-  volume;
-  volumeQuote;
-  price;
-  direction;
-  account;
-  type;
-  isTest;
+  /** @type {EcaOrder} */
+  order;
 
   constructor(data) {
-    this.id = data.id;
     this.command = data.command;
     this.account = data.account;
 
     switch (this.command) {
-      case 'cancelOrder':
-        this.txid = data.txid;
-        break;
-
-      case 'editOrder':
-        this.pair = data.pair;
-        this.txid = data.txid;
-        this.volume = data.volume;
-        this.type = data.type;
-        this.price = data.price;
-        this.direction = data.direction;
-        break;
-
       default:
-        this.userref = data.userref;
-        this.pair = data.pair;
-        this.direction = data.direction;
-        this.volume = data.volume;
-        this.volumeQuote = data.volumeQuote;
-        this.type = data.type;
-        this.price = data.price;
+        this.order = data.order;
         break;
     }
 
@@ -51,20 +22,16 @@ export default class Action {
 
   performChecks() {
     try {
-      if (typeof this.type === 'undefined' || !['market', 'limit'].includes(this.type)) throw new Error(`[${this.id}]: Invalid action parameter: {ordertype}`);
-      if (typeof this.direction === 'undefined' || !['buy', 'sell'].includes(this.direction))
-        throw new Error(`[${this.id}]: Invalid action parameter: {direction}`);
-      if (typeof this.volume === 'undefined' || this.volume == 0) throw new Error(`[${this.id}]: Invalid action parameter: {volume}`);
-      if (typeof this.pair === 'undefined') throw new Error(`[${this.id}]: Invalid action parameter: {pair}`);
-      if (this.type === 'limit') {
-        if (typeof this.price === 'undefined' || this.price <= 0) throw new Error(`[${this.id}]: Invalid action parameter for ${this.type} order: {price}`);
+      switch (this.command) {
+        default:
+          if (typeof this.order === 'undefined') throw new Error(`[${this.command}]: Invalid order`);
+          return this.order.isValid();
       }
     } catch (e) {
-      App.warning(`[${this.account}]: error in ${this.id}`);
+      App.warning(`[${this.account}]: error in Action ${this.command}`);
       App.printObject(this);
       throw e;
     }
-    return true;
   }
 
   /**
@@ -75,9 +42,7 @@ export default class Action {
   static CancelAction(order, isTest = false) {
     return new Action({
       command: 'cancelOrder',
-      id: order.id,
-      txid: order.txid,
-      account: order.account,
+      order: order,
       isTest: isTest,
     });
   }
@@ -89,14 +54,7 @@ export default class Action {
   static ReplaceAction(order, pairData, isTest = false) {
     return new Action({
       command: 'editOrder',
-      id: order.id,
-      txid: order.txid,
-      pair: pairData.id,
-      account: order.account,
-      price: order.price.toFixed(pairData.maxQuoteDigits),
-      volume: order.volume.toFixed(pairData.maxBaseDigits),
-      type: order.type,
-      direction: order.direction,
+      order: order,
       isTest: isTest,
     });
   }
@@ -105,46 +63,26 @@ export default class Action {
    *
    * @param {EcaOrder} order
    * @param {PairData} pairData
-   * @param {boolean} [isTest=false]
    * @returns {Action}
    */
-  static MarketAction(order, pairData, currentPrice = 0, isTest = false) {
+  static MarketAction(order, pairData, currentPrice = 0) {
+    if (order.type !== EcaOrder.OrderTypes.market) throw new Error(`[${order.id}]: Invalid order type ${order.type} - expected 'market'`);
     return new Action({
-      id: order.id,
-      ref: order.userref,
       command: 'submitOrder',
-      pair: pairData.id,
-      volume: Number(order.volume).toFixed(pairData.maxBaseDigits),
-      volumeQuote: order.volumeQuote.toFixed(pairData.maxQuoteDigits),
-      //price: (currentPrice > 0 ? currentPrice : order.price).toFixed(pairData.maxQuoteDigits),
-      direction: order.direction,
-      type: 'market',
-      account: order.account,
-      userref: order.userref,
-      sTest: isTest,
+      order: order,
     });
   }
   /**
    *
    * @param {EcaOrder} order
    * @param {PairData} pairData
-   * @param {boolean} [isTest=false]
    * @returns {Action}
    */
-  static LimitAction(order, pairData, isTest = false) {
+  static LimitAction(order, pairData) {
+    if (order.type !== EcaOrder.OrderTypes.limit) throw new Error(`[${order.id}]: Invalid order type ${order.type} - expected ${EcaOrder.OrderTypes.limit}`);
     return new Action({
-      id: order.id,
-      ref: order.userref,
       command: 'submitOrder',
-      pair: pairData.id,
-      direction: order.direction,
-      volume: Number(order.volume).toFixed(pairData.maxBaseDigits),
-      type: 'limit',
-      price: order.price.toFixed(pairData.maxQuoteDigits),
-      volumeQuote: order.volumeQuote.toFixed(pairData.maxQuoteDigits),
-      account: order.account,
-      userref: order.userref,
-      isTest: isTest,
+      order: order,
     });
   }
 

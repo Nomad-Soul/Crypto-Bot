@@ -267,18 +267,19 @@ export default class EcaStacker extends Strategy {
 
   /**
    *
-   * @param {EcaOrder} planOrder
+   * @param {EcaOrder} order
    * @param {Number} currentPrice
    * @param {boolean} isTest
    * @returns {Action}
    */
-  marketBuyAction(planOrder, currentPrice, isTest = true) {
-    planOrder.volume = Number(planOrder.volumeQuote / currentPrice);
-    if (planOrder.volume < this.pairData.minVolume) planOrder.volume = this.pairData.minVolume;
+  marketBuyAction(order, currentPrice, isTest = true) {
+    order.type = EcaOrder.OrderTypes.market;
+    order.volume = Number(order.volumeQuote / currentPrice);
+    if (order.volume < this.pairData.minVolume) order.volume = this.pairData.minVolume;
 
-    planOrder.direction = 'buy';
+    order.direction = 'buy';
 
-    return Action.MarketAction(planOrder, this.pairData, currentPrice, isTest);
+    return Action.MarketAction(order, this.pairData, currentPrice);
   }
 
   /**
@@ -290,6 +291,8 @@ export default class EcaStacker extends Strategy {
    */
   limitBuyAction(order, currentPrice, isTest = true) {
     const maxPrice = this.botSettings.maxPrice;
+
+    order.type = EcaOrder.OrderTypes.limit;
 
     if (currentPrice > maxPrice) {
       order.price = maxPrice;
@@ -306,6 +309,6 @@ export default class EcaStacker extends Strategy {
     }
 
     order.volumeQuote = order.volume * currentPrice;
-    return Action.LimitAction(order, this.pairData, isTest);
+    return Action.LimitAction(order, this.pairData);
   }
 }
