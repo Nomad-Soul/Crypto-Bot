@@ -99,6 +99,10 @@ export default class EcaTrader extends Strategy {
     return this.lastResult;
   }
 
+  /**
+   *
+   * @param {TraderDeal} deal
+   */
   checkDealFlags(deal) {
     var newOrder = true;
 
@@ -128,6 +132,17 @@ export default class EcaTrader extends Strategy {
         case 'editTakeProfitOrder':
           App.warning(`Editing ${order.id}`);
           this.actions.push(Action.ReplaceAction(order, this.pairData));
+          newOrder = false;
+          break;
+
+        case 'cancelAllPendingOrders':
+          App.warning(`Cancelling all pending orders for deal ${deal}`);
+          this.actions.push(
+            ...deal.orders
+              .map((id) => this.bot.getPlannedOrder(id))
+              .filter((order) => order.isActive)
+              .map((order) => Action.CancelAction(order)),
+          );
           newOrder = false;
           break;
 
@@ -235,10 +250,12 @@ export default class EcaTrader extends Strategy {
    * @param {TraderDeal} deal
    */
   #checkCompletion(deal) {
-    if (deal.isCompleted(this.bot)) {
+    if (deal.isCompleted(this.bot, this.pairData)) {
       this.logStatus(greenBright`Profit: ${deal.calculateProfit(this.bot).toFixed(2)} ${this.botSettings.quote.toUpperCase()}`);
       deal.status = 'closed';
       this.updateDeals();
+      var cancelAllPendingOrders = true;
+      this.setFlag({ cancelAllPendingOrders }, null);
       return true;
     }
     return false;
