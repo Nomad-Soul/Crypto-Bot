@@ -5,6 +5,7 @@ import App from '../app.js';
 import CryptoBot from '../crypto-bot.js';
 import { nanoid } from 'nanoid';
 import ExchangeOrder from './exchange-order.js';
+import PairData from './pair-data.js';
 
 export default class TraderDeal {
   id;
@@ -40,6 +41,25 @@ export default class TraderDeal {
   /**
    *
    * @param {CryptoBot} bot
+   * @returns {Number}
+   */
+
+  calculateTotalVolumeBought(bot) {
+    return this.#sumVolume(bot, 'buy');
+  }
+
+  /**
+   *
+   * @param {CryptoBot} bot
+   * @returns {Number}
+   */
+  calculateTotalVolumeSold(bot) {
+    return this.#sumVolume(bot, 'sell');
+  }
+
+  /**
+   *
+   * @param {CryptoBot} bot
    * @returns
    */
   async refreshExchangeOrders(bot) {
@@ -57,9 +77,14 @@ export default class TraderDeal {
   /**
    *
    * @param {CryptoBot} bot
+   * @param {PairData} pairData
    */
-  isCompleted(bot) {
-    if (this.sellOrders.length > 0 && this.sellOrders.map((id) => bot.getPlannedOrder(id)).every((o) => o.status === 'executed')) {
+  isCompleted(bot, pairData) {
+    var allSellOrdersExecuted = this.sellOrders.length > 0 && this.sellOrders.map((id) => bot.getPlannedOrder(id)).every((o) => o.isClosed);
+
+    var allBalanceSold = Math.abs(this.calculateTotalVolumeBought(bot) - this.calculateTotalVolumeSold(bot)) < pairData.minVolume;
+
+    if (allSellOrdersExecuted && allBalanceSold) {
       App.log(greenBright`[${this.id}]: deal completed`);
       return true;
     } else return false;
@@ -100,7 +125,7 @@ export default class TraderDeal {
       return sv;
     }, 0);
 
-    let sumWeights = this.#sumVolume(bot);
+    let sumWeights = this.calculateTotalVolumeBought(bot);
     var averagePrice = sumValue / sumWeights;
     var costBasis = averagePrice * sumWeights;
 
@@ -114,15 +139,15 @@ export default class TraderDeal {
    * @param {CryptoBot} bot
    * @returns
    */
-  #sumVolume(bot) {
-    return this.buyOrders.reduce((sw, id) => {
+  #sumVolume(bot, direction = 'buy') {
+    var orders = direction === 'buy' ? this.buyOrders : this.sellOrders;
+    return this.orders.reduce((sumVolume, id) => {
       let plannedOrder = bot.getPlannedOrder(id);
-      if (!plannedOrder.isClosed) return sw;
+      if (!plannedOrder.isClosed) return sumVolume;
       let exchangeOrder = bot.getClient(this.account).getLocalOrder(plannedOrder.txid);
 
-      let vol = Number(exchangeOrder.volume);
-      sw += vol;
-      return sw;
+      sumVolume += Number(exchangeOrder.volume);
+      return sumVolume;
     }, 0);
   }
 
