@@ -14,6 +14,7 @@ import EcaTrader from './strategies/eca-trader.js';
 import TelegramCryptoBot from './services/telegram-bot.js';
 import Strategy from './strategies/strategy.js';
 import Utils from './utils.js';
+import ExchangeClient from './services/exchange-client.js';
 
 export default class CryptoBot {
   #settings = {};
@@ -29,6 +30,9 @@ export default class CryptoBot {
    */
   telegramBot;
 
+  /** @type {ExchangeClient} */
+  ccxtClient;
+
   constructor() {
     this.loadSettings();
     this.loadPlannedOrders();
@@ -38,6 +42,10 @@ export default class CryptoBot {
       switch (accountSettings.type.toLowerCase()) {
         case 'kraken':
           if (accountSettings.active) this.#clients[accountId] = new KrakenClient(accountSettings);
+          if (!this.ccxtClient && accountId === 'krakenBot') {
+            this.ccxtClient = new ExchangeClient(accountSettings);
+            //this.ccxtClient.test();
+          }
           break;
 
         case 'coinbase':
@@ -467,8 +475,8 @@ export default class CryptoBot {
     if (typeof action === 'undefined') throw new Error('Action is undefined');
 
     var response;
-    var order = this.getPlannedOrder(action.id);
-    if (typeof order === 'undefined') throw new Error(`Cannot find order ${action.id}`);
+    var order = action.order;
+    if (typeof order === 'undefined') throw new Error(`Invalid order in Action ${action.command}`);
     var accountClient = this.getClient(action.account);
 
     response = await accountClient.processActionSync(action);
@@ -488,7 +496,7 @@ export default class CryptoBot {
             return;
           } else {
             this.telegramBot.log(
-              `[${action.id}] submitted ${action.type} order ${action.direction} at ${txinfo.price} (${txinfo.cost.toFixed(2)} €) on ${action.account}`,
+              `[${order.id}] submitted ${order.type} order ${order.direction} at ${txinfo.price} (${txinfo.cost.toFixed(2)} €) on ${action.account}`,
             );
 
             if (txinfo.status === 'open') accountClient.downloadOrders('open');
@@ -583,7 +591,7 @@ export default class CryptoBot {
     var responses = [];
     for (let i = 0; i < actions.length; i++) {
       let action = actions[i];
-      App.log(`${[action.id]}: ${action.command}`);
+      App.log(`${[action.order.id]}: ${action.command}`);
 
       switch (action.command) {
         case 'submitOrder':
