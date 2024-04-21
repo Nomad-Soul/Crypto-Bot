@@ -6,6 +6,8 @@ import App from '../app.js';
 import PairData from '../data/pair-data.js';
 import KrakenBot from './kraken.js';
 import Action from '../data/action.js';
+import ExchangeOrder from '../data/exchange-order.js';
+import EcaOrder from '../data/eca-order.js';
 
 export default class ExchangeClient extends ClientBase {
   /** @type {Exchange} */
@@ -28,6 +30,8 @@ export default class ExchangeClient extends ClientBase {
     this.id = 'ccxt';
     this.requestTickers(['btc/eur'.toUpperCase()]).then((response) => console.log(response));
     this.requestBalance().then((r) => console.log(r));
+    this.requestOrder('OJVWDS-RYFDV-R2FDGF').then((r) => console.log(r));
+    //this.requestOrder('85b2452f-e584-4cd2-b328-a70e6caf7e7b').then((r) => console.log(r));
   }
 
   async test() {
@@ -145,6 +149,7 @@ export default class ExchangeClient extends ClientBase {
 
     if (this.#ccxtClient.id === 'kraken') {
       /** @type {kraken} */
+      // @ts-ignore
       var krakenClient = this.#ccxtClient;
       return krakenClient.fetchOrdersByIds(txidArray).then((orders) =>
         orders.forEach((order) => {
@@ -153,7 +158,9 @@ export default class ExchangeClient extends ClientBase {
         }),
       );
     } else {
-      Promise.all(txidArray.map((txid) => this.requestOrder(txid))).then((orders) => orders.forEach((order) => this.setExchangeOrder(order.id, order)));
+      Promise.all(txidArray.map((txid) => this.requestOrder(txid))).then((orders) =>
+        orders.forEach((order) => this.setExchangeOrder(order.id, ExchangeClient.ConvertCcxtOrderToExchangeOrder(order))),
+      );
     }
   }
 
@@ -173,6 +180,46 @@ export default class ExchangeClient extends ClientBase {
       maxBaseDigits: ExchangeClient.ConvertPrecision(precisionMode, marketData.precision.amount),
       maxQuoteDigits: ExchangeClient.ConvertPrecision(precisionMode, marketData.precision.price),
       minBaseDisplayDigits: ExchangeClient.ConvertPrecision(precisionMode, marketData.limits.amount.min),
+    });
+  }
+
+  /**
+   *
+   * @param {import('ccxt').Order} order
+   * @returns {ExchangeOrder}
+   */
+  static ConvertCcxtOrderToExchangeOrder(order, exchangeType) {
+    var closeTime = undefined;
+    // ccxt currently lacks a property for the close time (or is undefined)
+    // hopefully this is a temporary workaround
+    if (order.status === 'closed') {
+      switch (exchangeType) {
+        case 'kraken':
+          closeTime = new Date(order.info.closetm * 1000);
+          break;
+
+        case 'binance':
+          closeTime = new Date(order.info.last_fill_time);
+          break;
+      }
+    } else if (order.status === 'canceled') {
+      if (order.filled > 0) {
+        order.status = 'closed';
+      } else order.status = 'cancelled';
+    }
+
+    return new ExchangeOrder({
+      type: order.type,
+      status: KrakenBot.ConvertKrakenStatusToExchangeOrder(order.status, order),
+      side: order.side,
+      openDate: new Date(order.timestamp),
+      closeDate: closeTime,
+      volume: order.filled,
+      price: order.price,
+      cost: order.cost,
+      fees: order.fee.cost,
+      userref: order.clientOrderId,
+      pair: order.symbol.toLowerCase(),
     });
   }
 
