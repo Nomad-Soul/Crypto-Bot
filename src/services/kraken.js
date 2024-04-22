@@ -548,14 +548,13 @@ export default class KrakenBot extends ClientBase {
    */
   static ActionToKrakenOrder(action) {
     action.performChecks();
-
     var order = action.order;
     var data = {
       userref: order.userref,
       pair: order.pair,
       type: order.direction,
       ordertype: order.type,
-      volume: order.volume,
+      volume: order.volume.toFixed(action.pairData.maxBaseDigits),
     };
 
     switch (action.command) {
@@ -564,11 +563,11 @@ export default class KrakenBot extends ClientBase {
         break;
 
       default:
-        App.log(`Unknown command ${action.command}`);
+        App.log(`Unknown command ${action.command} // ${action.order?.id}`);
     }
 
     if (order.type === EcaOrder.OrderTypes.limit) {
-      data.price = order.price;
+      data.price = order.price.toFixed(action.pairData.maxQuoteDigits);
     }
 
     return data;

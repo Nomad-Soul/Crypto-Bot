@@ -131,7 +131,7 @@ export default class EcaTrader extends Strategy {
 
         case 'editTakeProfitOrder':
           App.warning(`Editing ${order.id}`);
-          this.actions.push(Action.ReplaceAction(order, this.pairData));
+          this.actions.push(Action.ReplaceAction(order, this.pairData, this.accountClient.id));
           newOrder = false;
           break;
 
@@ -141,7 +141,7 @@ export default class EcaTrader extends Strategy {
             ...deal.orders
               .map((id) => this.bot.getPlannedOrder(id))
               .filter((order) => order.isActive)
-              .map((order) => Action.CancelAction(order)),
+              .map((order) => Action.CancelAction(order, this.accountClient.id)),
           );
           newOrder = false;
           break;
@@ -152,7 +152,7 @@ export default class EcaTrader extends Strategy {
           continue;
       }
 
-      if (newOrder && this.canSubmit(order)) this.actions.push(Action.OrderToAction(order, this.pairData));
+      if (newOrder && this.canSubmit(order)) this.actions.push(Action.OrderToAction(order, this.pairData, this.accountClient.id));
     }
   }
 
@@ -393,7 +393,7 @@ export default class EcaTrader extends Strategy {
       status = true;
       // Ignore sell order until the bot has actually bought something
       var buyOrders = proposedDeal.orders.filter((o) => o.direction === 'buy');
-      actions = buyOrders.map((order) => Action.OrderToAction(order, this.pairData));
+      actions = buyOrders.map((order) => Action.OrderToAction(order, this.pairData, this.accountClient.id));
       this.bot.addPlannedOrders(buyOrders);
       this.bot.updatePlanSchedule();
     }

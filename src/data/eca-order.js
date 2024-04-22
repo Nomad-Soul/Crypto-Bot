@@ -116,7 +116,12 @@ export default class EcaOrder {
   get isScheduledForToday() {
     var date1 = new Date(this.openDate).setHours(0, 0, 0, 0);
     var date2 = new Date(Date.now()).setHours(0, 0, 0, 0);
-    return date1 == date2;
+    return this.isPlanned && date1 == date2;
+  }
+
+  get isPastExecutionDate() {
+    var dateNow = new Date(Date.now());
+    return this.isPlanned && this.openDate < dateNow;
   }
 
   toString() {

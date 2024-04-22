@@ -13,7 +13,7 @@ import BotSettings from '../data/bot-settings.js';
 export default class CoinbaseClient extends ClientBase {
   /**
    *
-   * @param {AccountSettings} accountSettings
+   * @param {import('../types.js').AccountSettings} accountSettings
    */
   constructor(accountSettings) {
     super(accountSettings);
@@ -67,10 +67,16 @@ export default class CoinbaseClient extends ClientBase {
     });
   }
 
+  /**
+   *
+   * @param {Action} action
+   * @returns
+   */
   async submitOrder(action) {
-    App.log(`[${action.id}]: submitting ${yellowBright`${action.type} order ${action.direction} at ${action.price} on ${action.exchange}`}`);
-    var pairData = this.getPairData(action.pair);
-    var data = CoinbaseClient.ActionToCoinbaseOrder(action, pairData);
+    var order = action.order;
+    App.log(`[${order.id}]: submitting ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
+    var pairData = this.getPairData(order.pair);
+    var data = CoinbaseClient.ActionToCoinbaseOrder(action);
     App.printObject(data);
     return this.submitRequest('orders', 'POST', data);
   }
@@ -353,18 +359,18 @@ export default class CoinbaseClient extends ClientBase {
   /**
    *
    * @param {Action} action
-   * @param {PairData} pairData
    * @returns {any}
    */
-  static ActionToCoinbaseOrder(action, pairData) {
+  static ActionToCoinbaseOrder(action) {
     var orderConfig = {};
+    var order = action.order;
 
-    switch (action.type) {
+    switch (action.order.type) {
       case 'limit':
         orderConfig = {
           limit_limit_gtc: {
-            base_size: (action.volumeQuote / action.price).toFixed(pairData.maxBaseDigits).toString(),
-            limit_price: action.price.toFixed(4).toString(),
+            base_size: (order.volumeQuote / order.price).toFixed(action.pairData.maxBaseDigits).toString(),
+            limit_price: order.price.toFixed(4).toString(),
             post_only: true,
           },
         };
@@ -372,26 +378,25 @@ export default class CoinbaseClient extends ClientBase {
       case 'market':
         orderConfig = {
           market_market_ioc: {
-            quote_size: action.volumeQuote.toString(),
+            quote_size: order.volumeQuote.toString(),
           },
         };
         break;
     }
 
     var data = {
-      client_order_id: action.id,
-      product_id: `${pairData.base}-${pairData.quote}`.toUpperCase(),
-      side: action.direction.toUpperCase(),
+      client_order_id: order.id,
+      product_id: `${action.pairData.base}-${action.pairData.quote}`.toUpperCase(),
+      side: order.direction.toUpperCase(),
       order_configuration: orderConfig,
     };
 
     switch (action.command) {
       case 'submitOrder':
-        //console.log(data);
         break;
 
       default:
-        App.log(`Unknown command ${action.command}`);
+        App.log(`Unknown command ${action.command} // ${action.order?.id}`);
     }
 
     return data;

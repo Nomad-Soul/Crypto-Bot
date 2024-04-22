@@ -39,7 +39,7 @@ export default class EcaStacker extends Strategy {
    */
   hasActiveOrders() {
     return this.bot.getPlannedOrders(this.botId).some((order) => {
-      return (order.status === 'planned' && order.isScheduledForToday) || order.isActive;
+      return order.isScheduledForToday || order.isPastExecutionDate || order.isActive;
     });
   }
 
@@ -156,7 +156,7 @@ export default class EcaStacker extends Strategy {
           break;
 
         case 'replacePendingOrder':
-          if (this.accountClient.hasLocalExchangeOrder(order.txid)) this.actions.push(Action.CancelAction(order));
+          if (this.accountClient.hasLocalExchangeOrder(order.txid)) this.actions.push(Action.CancelAction(order, this.accountClient.id));
           break;
 
         default:
@@ -185,7 +185,7 @@ export default class EcaStacker extends Strategy {
    */
   canSubmit(order) {
     var balanceCheck = this.balanceCheck(order.volumeQuote);
-    var isToday = order.isScheduledForToday && order.status === 'planned';
+    var isToday = order.isScheduledForToday || order.isPastExecutionDate;
 
     return balanceCheck && isToday;
   }
@@ -259,7 +259,7 @@ export default class EcaStacker extends Strategy {
       action = this.limitBuyAction(plannedOrder, currentPrice, test);
     } else action = this.marketBuyAction(plannedOrder, currentPrice, test);
 
-    App.log(`Order planned for today? ${yellowBright`${plannedOrder.isScheduledForToday ? 'yes' : 'no'}`}`);
+    App.log(`Order planned for today or past due? ${yellowBright`${plannedOrder.isScheduledForToday || plannedOrder.isPastExecutionDate ? 'yes' : 'no'}`}`);
 
     console.log(action);
     return action;
@@ -279,7 +279,7 @@ export default class EcaStacker extends Strategy {
 
     order.direction = 'buy';
 
-    return Action.MarketAction(order, this.pairData, currentPrice);
+    return Action.MarketAction(order, this.pairData, this.accountClient.id);
   }
 
   /**
@@ -309,6 +309,6 @@ export default class EcaStacker extends Strategy {
     }
 
     order.volumeQuote = order.volume * currentPrice;
-    return Action.LimitAction(order, this.pairData);
+    return Action.LimitAction(order, this.pairData, this.accountClient.id);
   }
 }

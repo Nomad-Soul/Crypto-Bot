@@ -312,17 +312,16 @@ export default class ClientBase {
   /**
    *
    * @param {EcaOrder} plannedOrder
-   * @param {Action} action
    * @returns
    */
-  async updatePlannedOrder(plannedOrder, action) {
+  async updatePlannedOrder(plannedOrder) {
     var txinfo = await this.getExchangeOrder(plannedOrder.txid);
 
     if (typeof txinfo === 'undefined') {
       App.printObject(plannedOrder);
       App.warning('Invalid response');
     } else {
-      switch (action.type) {
+      switch (plannedOrder.type) {
         case 'limit':
           plannedOrder.status = 'pending';
           plannedOrder.openDate = txinfo.openDate;

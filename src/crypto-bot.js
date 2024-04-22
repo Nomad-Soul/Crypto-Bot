@@ -467,8 +467,8 @@ export default class CryptoBot {
     if (typeof action === 'undefined') throw new Error('Action is undefined');
 
     var response;
-    var order = this.getPlannedOrder(action.id);
-    if (typeof order === 'undefined') throw new Error(`Cannot find order ${action.id}`);
+    var order = this.getPlannedOrder(action.order.id);
+    if (typeof order === 'undefined') throw new Error(`Cannot find order ${action.order.id}`);
     var accountClient = this.getClient(action.account);
 
     response = await accountClient.processActionSync(action);
@@ -482,13 +482,13 @@ export default class CryptoBot {
         }
 
         order.txid = accountClient.getTxidFromResponse(response);
-        let promise = accountClient.updatePlannedOrder(order, action).then((txinfo) => {
+        let promise = accountClient.updatePlannedOrder(order).then((txinfo) => {
           if (typeof txinfo === 'undefined') {
             this.telegramBot.log(`Unexpected error when updating ${order.id}`);
             return;
           } else {
             this.telegramBot.log(
-              `[${action.id}] submitted ${action.type} order ${action.direction} at ${txinfo.price} (${txinfo.cost.toFixed(2)} €) on ${action.account}`,
+              `[${order.id}] submitted ${order.type} order ${order.direction} at ${txinfo.price} (${txinfo.cost.toFixed(2)} €) on ${action.account}`,
             );
 
             if (txinfo.status === 'open') accountClient.downloadOrders('open');
@@ -583,7 +583,7 @@ export default class CryptoBot {
     var responses = [];
     for (let i = 0; i < actions.length; i++) {
       let action = actions[i];
-      App.log(`${[action.id]}: ${action.command}`);
+      App.log(`${[action.order.id]}: ${action.command}`);
 
       switch (action.command) {
         case 'submitOrder':
