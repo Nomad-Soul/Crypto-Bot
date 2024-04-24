@@ -32,7 +32,7 @@ App.server = server.listen(port, () => {
 });
 
 server.get('/api', async function (req, res) {
-  let target = req.query['target'];
+  let target = req.query['target'].toString();
   App.log(`/${cyan`${target}[${formatEndpoint(req)}]`}: request from ${req.ip}`, true);
 
   let endpoint = req.query['endpoint'];
@@ -60,7 +60,7 @@ server.get('/api', async function (req, res) {
       break;
 
     case 'Balance': {
-      let accountId = req.query['account'];
+      let accountId = req.query['account'].toString();
       response = {
         balances: bot.getClient(accountId).balances,
         html: renderer.renderBalanceBlocks(accountId).html,
@@ -69,7 +69,7 @@ server.get('/api', async function (req, res) {
     }
 
     case 'StartDeal': {
-      let botId = req.query['botId'];
+      let botId = req.query['botId'].toString();
       let botSettings = bot.getBotSettings(botId);
       if (botSettings.strategyType === 'eca-trader') {
         var trader = new EcaTrader(bot, botId);
@@ -79,8 +79,8 @@ server.get('/api', async function (req, res) {
     }
 
     case 'TradeBalance': {
-      let botId = req.query['botId'];
-      let groupBy = req.query['groupBy'];
+      let botId = req.query['botId'].toString();
+      let groupBy = req.query['groupBy'].toString();
       let botSettings = bot.getBotSettings(botId);
       var th = new TradeHistory(bot, botId);
 
@@ -92,7 +92,7 @@ server.get('/api', async function (req, res) {
     }
 
     case 'PurchaseHistory': {
-      let botId = req.query['botId'];
+      let botId = req.query['botId'].toString();
       let purchases = new TradeHistory(bot, botId).reportPurchases(bot.getClient('kraken'));
       let pair = bot.getBotSettings(botId).pair;
       //console.log(purchases);
@@ -102,7 +102,7 @@ server.get('/api', async function (req, res) {
     }
 
     case 'DealPreview': {
-      let botId = req.query['botId'];
+      let botId = req.query['botId'].toString();
       let trader = new EcaTrader(bot, botId);
       let pair = bot.getBotSettings(botId).pair;
       var dealResult = trader.dealPlanner.proposeDeal(bot.getPrice(pair), 4);

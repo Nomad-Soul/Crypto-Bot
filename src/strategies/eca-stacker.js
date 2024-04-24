@@ -39,7 +39,7 @@ export default class EcaStacker extends Strategy {
    */
   hasActiveOrders() {
     return this.bot.getPlannedOrders(this.botId).some((order) => {
-      return (order.status === 'planned' && order.isScheduledForToday) || order.isActive;
+      return order.isScheduledForToday || order.isPastExecutionDate || order.isActive;
     });
   }
 
@@ -185,7 +185,7 @@ export default class EcaStacker extends Strategy {
    */
   canSubmit(order) {
     var balanceCheck = this.balanceCheck(order.volumeQuote);
-    var isToday = order.isScheduledForToday && order.status === 'planned';
+    var isToday = order.isScheduledForToday || order.isPastExecutionDate;
 
     return balanceCheck && isToday;
   }
@@ -223,7 +223,7 @@ export default class EcaStacker extends Strategy {
     this.logStatus(yellowBright`[${plannedOrder.id}] still pending at ${Utils.toShortTime(this.dateNow)}`);
 
     let waitDate = new Date(plannedOrder.openDate);
-    waitDate.setHours(23, 30, 0);
+    waitDate.setHours(23, 29, 0);
     if (waitDate.getFullYear() == 1970) App.error(`Wrong date: ${Utils.toShortDate(waitDate)} - plan.date: ${plannedOrder.openDate}`);
 
     this.logStatus(`${greenBright`Waiting`} until ${Utils.toShortDate(waitDate)} ${yellowBright`${Utils.toShortTime(waitDate)}`}`);
@@ -259,7 +259,7 @@ export default class EcaStacker extends Strategy {
       action = this.limitBuyAction(plannedOrder, currentPrice, test);
     } else action = this.marketBuyAction(plannedOrder, currentPrice, test);
 
-    App.log(`Order planned for today? ${yellowBright`${plannedOrder.isScheduledForToday ? 'yes' : 'no'}`}`);
+    App.log(`Order planned for today or past due? ${yellowBright`${plannedOrder.isScheduledForToday || plannedOrder.isPastExecutionDate ? 'yes' : 'no'}`}`);
 
     console.log(action);
     return action;
@@ -267,18 +267,19 @@ export default class EcaStacker extends Strategy {
 
   /**
    *
-   * @param {EcaOrder} planOrder
+   * @param {EcaOrder} order
    * @param {Number} currentPrice
    * @param {boolean} isTest
    * @returns {Action}
    */
-  marketBuyAction(planOrder, currentPrice, isTest = true) {
-    planOrder.volume = Number(planOrder.volumeQuote / currentPrice);
-    if (planOrder.volume < this.pairData.minVolume) planOrder.volume = this.pairData.minVolume;
+  marketBuyAction(order, currentPrice, isTest = true) {
+    order.type = EcaOrder.OrderTypes.market;
+    order.volume = Number(order.volumeQuote / currentPrice);
+    if (order.volume < this.pairData.minVolume) order.volume = this.pairData.minVolume;
 
-    planOrder.direction = 'buy';
+    order.direction = 'buy';
 
-    return Action.MarketAction(planOrder, this.pairData, currentPrice, isTest);
+    return Action.MarketAction(order, this.pairData);
   }
 
   /**
@@ -290,6 +291,8 @@ export default class EcaStacker extends Strategy {
    */
   limitBuyAction(order, currentPrice, isTest = true) {
     const maxPrice = this.botSettings.maxPrice;
+
+    order.type = EcaOrder.OrderTypes.limit;
 
     if (currentPrice > maxPrice) {
       order.price = maxPrice;
@@ -306,6 +309,6 @@ export default class EcaStacker extends Strategy {
     }
 
     order.volumeQuote = order.volume * currentPrice;
-    return Action.LimitAction(order, this.pairData, isTest);
+    return Action.LimitAction(order, this.pairData);
   }
 }

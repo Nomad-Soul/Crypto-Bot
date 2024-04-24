@@ -435,7 +435,7 @@ export default class CryptoBot {
       if (check.result) {
         switch (check.newStatus) {
           case 'executed': {
-            let message = `[${greenBright`${plannedOrder.id}`}]: order ${greenBright`filled`} at ${plannedOrder.closeDate.toLocaleTimeString(App.locale)} for ${Number(exchangeOrder.price).toFixed(2)} (${Number(exchangeOrder.cost).toFixed(2)} ${botSettings.quote})`;
+            let message = `[${greenBright`${plannedOrder.id}`}]: order ${greenBright`filled`} at ${plannedOrder.closeDate.toLocaleTimeString(App.locale.id)} for ${Number(exchangeOrder.price).toFixed(2)} (${Number(exchangeOrder.cost).toFixed(2)} ${botSettings.quote})`;
             App.log(message, true);
             this.telegramBot.log(message);
             updateFile = true;
@@ -443,7 +443,7 @@ export default class CryptoBot {
           }
 
           case 'cancelled': {
-            let message = `[${greenBright`${plannedOrder.id}`}]: order ${redBright`cancelled`} at ${plannedOrder.closeDate.toLocaleTimeString(App.locale)}`;
+            let message = `[${greenBright`${plannedOrder.id}`}]: order ${redBright`cancelled`} at ${plannedOrder.closeDate.toLocaleTimeString(App.locale.id)}`;
             App.warning(message);
             this.deletePlannedOrder(plannedOrder);
             updateFile = true;
@@ -475,9 +475,9 @@ export default class CryptoBot {
     if (typeof action === 'undefined') throw new Error('Action is undefined');
 
     var response;
-    var order = action.order;
-    if (typeof order === 'undefined') throw new Error(`Invalid order in Action ${action.command}`);
-    var accountClient = this.getClient(action.account);
+    var order = this.getPlannedOrder(action.order.id);
+    if (typeof order === 'undefined') throw new Error(`Cannot find order in ${action.command}`);
+    var accountClient = this.getClient(order.account);
 
     response = await accountClient.processActionSync(action);
     if (typeof response === 'undefined') throw new Error(redBright`No response!`);
@@ -490,13 +490,13 @@ export default class CryptoBot {
         }
 
         order.txid = accountClient.getTxidFromResponse(response);
-        let promise = accountClient.updatePlannedOrder(order, action).then((txinfo) => {
+        let promise = accountClient.updatePlannedOrder(order).then((txinfo) => {
           if (typeof txinfo === 'undefined') {
             this.telegramBot.log(`Unexpected error when updating ${order.id}`);
             return;
           } else {
             this.telegramBot.log(
-              `[${order.id}] submitted ${order.type} order ${order.direction} at ${txinfo.price} (${txinfo.cost.toFixed(2)} €) on ${action.account}`,
+              `[${order.id}] submitted ${order.type} order ${order.direction} at ${txinfo.price} (${txinfo.cost.toFixed(2)} €) on ${order.account}`,
             );
 
             if (txinfo.status === 'open') accountClient.downloadOrders('open');
@@ -509,7 +509,7 @@ export default class CryptoBot {
       }
 
       case 'cancelOrder':
-        App.log(redBright`[${order.id}] cancelled ${action.account} order ${order.txid}`);
+        App.log(redBright`[${order.id}] cancelled ${order.account} order ${order.txid}`);
         return response;
     }
   }
@@ -596,11 +596,11 @@ export default class CryptoBot {
       switch (action.command) {
         case 'submitOrder':
         case 'editOrder':
-          responses.push(this.processAction(action));
+          responses.push(await this.processAction(action));
           break;
 
         case 'cancelOrder':
-          responses.push(this.processAction(action));
+          responses.push(await this.processAction(action));
           break;
 
         default:
@@ -609,6 +609,6 @@ export default class CryptoBot {
           break;
       }
     }
-    return Promise.all(responses);
+    return responses;
   }
 }
