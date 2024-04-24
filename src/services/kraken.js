@@ -168,7 +168,7 @@ export default class KrakenBot extends ClientBase {
    */
   async submitOrder(action) {
     var order = action.order;
-    App.log(`[${order.id}]: submitting ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${action.account}`}`);
+    App.log(`[${order.id}]: submitting ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
     return this.queryPrivate(KrakenBot.ActionToKrakenOrder(action), action.isTest);
   }
 
@@ -179,7 +179,7 @@ export default class KrakenBot extends ClientBase {
    */
   async editOrder(action) {
     var order = action.order;
-    App.log(`${greenBright`[${order.id}]: editing`} ${yellowBright`${order.txid}`} on ${action.account}`);
+    App.log(`${greenBright`[${order.id}]: editing`} ${yellowBright`${order.txid}`} on ${order.account}`);
     App.log(`Edited price: ${order.price} volume: ${order.volume}`);
     return this.queryPrivate({ endpoint: 'EditOrder', txid: order.txid, pair: order.pair, price: action.order, volume: order.volume });
   }
@@ -191,7 +191,7 @@ export default class KrakenBot extends ClientBase {
    */
   async cancelOrder(action) {
     var order = action.order;
-    App.log(`${greenBright`[${order.id}]: cancelling`} ${yellowBright`${order.txid}`} on ${action.account}`);
+    App.log(`${greenBright`[${order.id}]: cancelling`} ${yellowBright`${order.txid}`} on ${order.account}`);
     return this.queryPrivate({ endpoint: 'CancelOrder', txid: order.txid }, action.isTest);
   }
 

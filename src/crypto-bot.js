@@ -469,7 +469,7 @@ export default class CryptoBot {
     var response;
     var order = this.getPlannedOrder(action.order.id);
     if (typeof order === 'undefined') throw new Error(`Cannot find order ${action.order.id}`);
-    var accountClient = this.getClient(action.account);
+    var accountClient = this.getClient(order.account);
 
     response = await accountClient.processActionSync(action);
     if (typeof response === 'undefined') throw new Error(redBright`No response!`);
@@ -488,7 +488,7 @@ export default class CryptoBot {
             return;
           } else {
             this.telegramBot.log(
-              `[${order.id}] submitted ${order.type} order ${order.direction} at ${txinfo.price} (${txinfo.cost.toFixed(2)} €) on ${action.account}`,
+              `[${order.id}] submitted ${order.type} order ${order.direction} at ${txinfo.price} (${txinfo.cost.toFixed(2)} €) on ${order.account}`,
             );
 
             if (txinfo.status === 'open') accountClient.downloadOrders('open');
@@ -501,7 +501,7 @@ export default class CryptoBot {
       }
 
       case 'cancelOrder':
-        App.log(redBright`[${order.id}] cancelled ${action.account} order ${order.txid}`);
+        App.log(redBright`[${order.id}] cancelled ${order.account} order ${order.txid}`);
         return response;
     }
   }

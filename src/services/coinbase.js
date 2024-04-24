@@ -75,7 +75,6 @@ export default class CoinbaseClient extends ClientBase {
   async submitOrder(action) {
     var order = action.order;
     App.log(`[${order.id}]: submitting ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
-    var pairData = this.getPairData(order.pair);
     var data = CoinbaseClient.ActionToCoinbaseOrder(action);
     App.printObject(data);
     return this.submitRequest('orders', 'POST', data);
@@ -164,6 +163,7 @@ export default class CoinbaseClient extends ClientBase {
     const algorithm = 'ES256';
     const uri = request_method + ' ' + url + request_path;
 
+    // @ts-ignore
     const token = jwt.sign(
       {
         aud: [service_name],
@@ -362,6 +362,7 @@ export default class CoinbaseClient extends ClientBase {
    * @returns {any}
    */
   static ActionToCoinbaseOrder(action) {
+    action.performChecks();
     var orderConfig = {};
     var order = action.order;
 

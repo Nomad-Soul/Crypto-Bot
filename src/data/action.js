@@ -11,7 +11,6 @@ export default class Action {
 
   constructor(data) {
     this.command = data.command;
-    this.account = data.account;
     this.pairData = data.pairData;
 
     switch (this.command) {
@@ -31,7 +30,6 @@ export default class Action {
           return this.order.isValid();
       }
     } catch (e) {
-      App.warning(`[${this.account}]: error in Action ${this.command}`);
       App.printObject(this);
       throw e;
     }
@@ -40,15 +38,14 @@ export default class Action {
   /**
    *
    * @param {EcaOrder} order
-   * @param {string} account
    * @returns {Action}
    */
-  static CancelAction(order, account, isTest = false) {
+  static CancelAction(order, isTest = false) {
+    if (typeof order === 'undefined') throw new Error('Invalid order passed to Action.CancelAction');
     return new Action({
       command: 'cancelOrder',
       order: order,
       isTest: isTest,
-      account: account,
     });
   }
 
@@ -57,16 +54,15 @@ export default class Action {
    * @param {EcaOrder} order
    * @param {PairData} pairData
    * @param {PairData} pairData
-   * @param {string} account
    * @returns {Action}
    */
-  static ReplaceAction(order, pairData, account, isTest = false) {
+  static ReplaceAction(order, pairData, isTest = false) {
+    if (typeof order === 'undefined') throw new Error('Invalid order passed to Action.ReplaceAction');
     return new Action({
       command: 'editOrder',
       order: order,
       isTest: isTest,
       pairData: pairData,
-      account: account,
     });
   }
 
@@ -75,32 +71,15 @@ export default class Action {
    * @param {EcaOrder} order
    * @param {PairData} pairData
    * @param {PairData} pairData
-   * @param {string} account
    * @returns {Action}
    */
-  static MarketAction(order, pairData, account) {
+  static MarketAction(order, pairData) {
+    if (typeof order === 'undefined') throw new Error('Invalid order passed to Action.MarketAction');
     if (order.type !== EcaOrder.OrderTypes.market) throw new Error(`[${order.id}]: Invalid order type ${order.type} - expected 'market'`);
     return new Action({
       command: 'submitOrder',
       order: order,
       pairData: pairData,
-      account: account,
-    });
-  }
-  /**
-   *
-   * @param {EcaOrder} order
-   * @param {PairData} pairData
-   * @param {string} account
-   * @returns {Action}
-   */
-  static LimitAction(order, pairData, account) {
-    if (order.type !== EcaOrder.OrderTypes.limit) throw new Error(`[${order.id}]: Invalid order type ${order.type} - expected ${EcaOrder.OrderTypes.limit}`);
-    return new Action({
-      command: 'submitOrder',
-      order: order,
-      pairData: pairData,
-      account: account,
     });
   }
 
@@ -108,15 +87,30 @@ export default class Action {
    *
    * @param {EcaOrder} order
    * @param {PairData} pairData
-   * @param {string} account
+   * @returns {Action}
+   */
+  static LimitAction(order, pairData) {
+    if (typeof order === 'undefined') throw new Error('Invalid order passed to Action.LimitAction');
+    if (order.type !== EcaOrder.OrderTypes.limit) throw new Error(`[${order.id}]: Invalid order type ${order.type} - expected ${EcaOrder.OrderTypes.limit}`);
+    return new Action({
+      command: 'submitOrder',
+      order: order,
+      pairData: pairData,
+    });
+  }
+
+  /**
+   *
+   * @param {EcaOrder} order
+   * @param {PairData} pairData
    * @returns
    */
-  static OrderToAction(order, pairData, account) {
+  static OrderToAction(order, pairData) {
     switch (order.type) {
       case 'market':
-        return this.MarketAction(order, pairData, account);
+        return this.MarketAction(order, pairData);
       case 'limit':
-        return this.LimitAction(order, pairData, account);
+        return this.LimitAction(order, pairData);
 
       default:
         App.error(`Invalid order type in ${order.id}`);

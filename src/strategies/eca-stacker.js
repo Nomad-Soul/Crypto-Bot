@@ -87,7 +87,7 @@ export default class EcaStacker extends Strategy {
     this.checkDealFlags();
 
     var response;
-    if (this.actions.length > 0) response = this.bot.executeActions(this.actions);
+    // if (this.actions.length > 0) response = this.bot.executeActions(this.actions);
 
     this.lastResult = { botId: this.botId, flags: Object.keys(Object.fromEntries(this.flags)), status: this.statusMessages.join('\n') };
 
@@ -156,7 +156,7 @@ export default class EcaStacker extends Strategy {
           break;
 
         case 'replacePendingOrder':
-          if (this.accountClient.hasLocalExchangeOrder(order.txid)) this.actions.push(Action.CancelAction(order, this.accountClient.id));
+          if (this.accountClient.hasLocalExchangeOrder(order.txid)) this.actions.push(Action.CancelAction(order));
           break;
 
         default:
@@ -223,7 +223,7 @@ export default class EcaStacker extends Strategy {
     this.logStatus(yellowBright`[${plannedOrder.id}] still pending at ${Utils.toShortTime(this.dateNow)}`);
 
     let waitDate = new Date(plannedOrder.openDate);
-    waitDate.setHours(23, 30, 0);
+    waitDate.setHours(23, 29, 0);
     if (waitDate.getFullYear() == 1970) App.error(`Wrong date: ${Utils.toShortDate(waitDate)} - plan.date: ${plannedOrder.openDate}`);
 
     this.logStatus(`${greenBright`Waiting`} until ${Utils.toShortDate(waitDate)} ${yellowBright`${Utils.toShortTime(waitDate)}`}`);
@@ -279,7 +279,7 @@ export default class EcaStacker extends Strategy {
 
     order.direction = 'buy';
 
-    return Action.MarketAction(order, this.pairData, this.accountClient.id);
+    return Action.MarketAction(order, this.pairData);
   }
 
   /**
@@ -309,6 +309,6 @@ export default class EcaStacker extends Strategy {
     }
 
     order.volumeQuote = order.volume * currentPrice;
-    return Action.LimitAction(order, this.pairData, this.accountClient.id);
+    return Action.LimitAction(order, this.pairData);
   }
 }
