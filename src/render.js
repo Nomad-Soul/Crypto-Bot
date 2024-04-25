@@ -33,6 +33,7 @@ export default class Renderer {
 
     var accountClient;
     var sortedData = data.sort((a, b) => b.openDate.getTime() - a.openDate.getTime());
+    App.error(`L: ${sortedData.length}`, false);
     for (let i = 0; i < sortedData.length; i++) {
       let order = data[i];
       let botSettings = this.#bot.getBotSettings(order.botId);
@@ -112,9 +113,9 @@ export default class Renderer {
       <div class="col-md-2 d-md-block d-none text-md-end">Frequency</div>
       <div class="col-md-1-5 d-md-block d-none text-md-center text-center">Last</div>
       <div class="col-md-1 d-md-block d-none text-md-start">Exchange</div>
-      <div class="col-md-1-5 col-5 text-md-end text-end">Cost Basis</div>
+      <div class="col-md-1-5 col-5 text-md-end text-center">Average Price</div>
       <div class="col-md-1-5 col-4 text-md-end text-end">Total €</div>
-      <div class="col-md-1-5 col-3 text-md-end text-end">Total Vol</div>
+      <div class="col-md-1-5 col-3 text-md-end text-center">Total Volume</div>
     </div>
     `;
 
@@ -135,8 +136,6 @@ export default class Renderer {
         var exchangeOrder = await accountClient.getExchangeOrder(txid);
         exchangeOrders.push(exchangeOrder);
       }
-
-      //console.log(exchangeOrders);
 
       let weightedAverage = exchangeOrders.reduce(
         (accumulator, order) => [
@@ -166,12 +165,9 @@ export default class Renderer {
       let currentPrice = Number(this.#bot.getPrice(pair));
 
       let desiredAmount = Math.max(botSettings.maxVolumeQuote, pairData.minVolume * currentPrice);
-      let costBasis = weightedAverage.map((value) => value.weightedSum / value.sum)[0];
+      let averagePrice = weightedAverage.map((value) => value.weightedSum / value.sum)[0];
       let costUnit = '';
-      if (costBasis > 10000) {
-        costBasis /= 1000;
-        costUnit = 'k';
-      }
+
       let totalVolumeBought = weightedAverage.map((value) => value.sum)[0];
       let totalSpent = weightedAverage[0].weightedSum;
       let frequency = Number(botSettings.options.frequency);
@@ -182,7 +178,7 @@ export default class Renderer {
 
       let averageClass = 'text-neutral';
       let amountClass = 'text-success';
-      if (currentPrice > costBasis) averageClass = 'text-success';
+      if (currentPrice > averagePrice) averageClass = 'text-success';
       else averageClass = 'text-danger';
 
       var executedOrders = this.#bot.getPlannedOrders(botIds[i]).filter((o) => o.status === 'executed');
@@ -196,6 +192,11 @@ export default class Renderer {
 
       if (desiredAmount > botSettings.maxVolumeQuote) amountClass = 'text-danger';
 
+      if (averagePrice > 10000) {
+        averagePrice /= 1000;
+        costUnit = 'k';
+      }
+
       html += `<div class="row mt-2" data-groupBy="${JSON.stringify(groupByMonth)}">
         <div class="col-md-1 col-2 text-start"><span class="badge ${botSettings.badgeClass}">${botSettings.base}</span></div>
         <div class="col-md-1 d-md-block d-none text-end ${amountClass}">${Number(desiredAmount).toFixed(2)}</div>
@@ -203,7 +204,7 @@ export default class Renderer {
         <div class="col-md-2 d-md-block d-none text-md-end">${frequencyText}</div>
         <div class="col-md-1-5 d-md-block d-none text-start">${lastDateString}</div>
         <div class="col-md-1 d-md-block d-none text-md-start small">${botSettings.account}</div>
-        <div class="col-md-1-5 col-3 text-md-end text-end ${averageClass}">${Number(costBasis).toFixed(2)}${costUnit}</div>
+        <div class="col-md-1-5 col-3 text-md-end text-end ${averageClass}" title="${pairData.id}: ${currentPrice.toFixed(2)}">${Number(averagePrice).toFixed(2)}${costUnit}</div>
         <div class="col-md-1-5 col-4 text-end text-info">${Number(totalSpent).toFixed(2)}&thinsp;€</div>
         <div class="col-md-1-5 col-3 text-end text-info">${Number(totalVolumeBought).toFixed(Math.min(pairData.minBaseDisplayDigits, 4))}</div> 
 

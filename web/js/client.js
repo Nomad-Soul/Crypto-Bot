@@ -45,12 +45,9 @@ async function init() {
       }
     });
   });
-  receiveData('ShowSchedule', 'plannedOrders', { target: 'api' });
   updateBalance();
   receiveData('ShowSchedule', 'plannedOrders', { target: 'api' });
   receiveData('ShowActivePlans', 'activePlans', { target: 'api' });
-
-  // receiveData('DealPreview', 'dealPreview', { target: 'api', bot: 'bot-eth/eur', pair: 'btc/eur' });
 
   decide();
 }
