@@ -73,7 +73,7 @@ export default class TradeHistory {
     var proceeds = 0;
     var openDate = orders[0].openDate;
     var closeDate;
-
+    var currentPrice = this.#bot.getPrice(this.#botSettings.pair);
     /**
      *
      * @param {ExchangeOrder} lastOrder
@@ -83,7 +83,13 @@ export default class TradeHistory {
       if (verbose) {
         var colour = profit > 0 ? greenBright : redBright;
         if (profit > 100) colour = magentaBright;
-        App.log(colour`Profit: ${profit.toFixed(2)} (${proceeds.toFixed(2)}:${costBasis.toFixed(2)})`);
+        else if (profit < 0 && lastOrder.side === 'buy') {
+          profit = balance * currentPrice - costBasis;
+        }
+
+        App.log(
+          colour`Profit: ${profit.toFixed(2)} (${proceeds.toFixed(2)}:${costBasis.toFixed(2)}) - remaining balance: ${balance.toFixed(4)} (${(balance * currentPrice).toFixed(2)} ${App.locale.currency})`,
+        );
       }
       closeDate = prevOrder.closeDate;
       dataDeals.push({
@@ -91,9 +97,9 @@ export default class TradeHistory {
         openDate: openDate,
         closeDate: closeDate,
         costBasis: Number(costBasis.toFixed(2)),
-        proceeds: Number(proceeds.toFixed(2)),
+        proceeds: proceeds > 0 ? Number(proceeds.toFixed(2)) : Number((balance * currentPrice).toFixed(2)),
         currency: lastOrder.pair.split('/')[1],
-        reliable: balance >= 0 && balance * lastOrder.price < 0.5,
+        reliable: balance >= 0 && balance * lastOrder.price < 1,
       });
       balance = 0;
       costBasis = 0;
@@ -105,8 +111,7 @@ export default class TradeHistory {
       let color = order.side === 'buy' ? cyanBright : greenBright;
 
       if (prevOrder != null && order.side === 'buy' && prevOrder.side === 'sell') {
-        savePnl(order);
-
+        savePnl(prevOrder);
         openDate = order.openDate;
       }
 
@@ -220,28 +225,20 @@ export default class TradeHistory {
 
     var items = [];
     var trades = [...dataset.keys()];
-    App.warning(trades[0]);
     var firstTradeArgs = trades[0].split('-');
     var lastTradeArgs = trades.at(-1).split('-');
     var startDate = new Date(trades[0]);
     var endDate = new Date(trades.at(-1));
-    // var firstYear = Number(firstTradeArgs[0]);
-    // var firstMonth = Number(firstTradeArgs[1]);
-    // var lastYear = Number(lastTradeArgs[0]);
-    // var lastMonth = Number(lastTradeArgs[1]);
 
     var delta = countMonths(startDate, endDate);
-    // console.log([firstYear, firstMonth, lastYear, lastMonth]);
     var prevDate = startDate;
     for (let m = 0; m <= delta; m++) {
       var date = new Date(new Date(prevDate).setMonth(prevDate.getMonth() + m));
       var label = `${date.getFullYear()}-${date.toLocaleString(App.locale.id, { month: '2-digit' }).toString().padStart(2, '0')}`;
-      console.log(label);
       if (!dataset.has(label)) {
         items.push([label, { pnl: 0, reliable: true }]);
       } else items.push([label, dataset.get(label)]);
     }
-    console.log(items);
     return items;
   }
 
