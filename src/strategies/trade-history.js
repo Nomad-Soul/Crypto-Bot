@@ -4,9 +4,10 @@ import App from '../app.js';
 import CryptoBot from '../crypto-bot.js';
 import Utils from '../utils.js';
 import ClientBase from '../services/client.js';
-import EcaTrader from './eca-trader.js';
 import ExchangeOrder from '../data/exchange-order.js';
 import TraderDeal from '../data/trader-deal.js';
+import { nanoid } from 'nanoid';
+import BotSettings from '../data/bot-settings.js';
 
 export default class TradeHistory {
   /**
@@ -53,13 +54,14 @@ export default class TradeHistory {
   /**
    *
    * @param {ClientBase} accountClient
-   * @param {{verbose: boolean, saveFile: boolean}} options
+   * @param {string} botId
+   * @param {{verbose: boolean, redownload: boolean, saveTrades: boolean, saveDeals: boolean}} options
    */
-  async analyseOrders(accountClient, options = undefined) {
-    const { verbose, saveFile } = options || { verbose: false, saveFile: false };
+  async analyseOrders(accountClient, botId, options = undefined) {
+    const { verbose, redownload, saveTrades, saveDeals } = options || { verbose: false, redownload: false, saveTrades: false, saveDeals: false };
 
     var balance = 0;
-    await accountClient.downloadAllOrders('closed');
+    if (redownload) await accountClient.downloadAllOrders('closed');
 
     var dataDeals = [];
     var dealIndex = 1;
@@ -106,12 +108,38 @@ export default class TradeHistory {
       proceeds = 0;
     }
 
+    var buyOrders = [];
+    var sellOrders = [];
+    /** @type {TraderDeal[]} */
+    var deals = [];
+
+    /**
+     *
+     * @param {ExchangeOrder} lastOrder
+     */
+    function saveDeal(lastOrder) {
+      if (buyOrders.length > 0) {
+        var deal = new TraderDeal({
+          index: dealIndex,
+          botId: botId,
+          buyOrders: buyOrders,
+          sellOrders: sellOrders,
+          account: accountClient.id,
+          status: lastOrder.side === 'sell' ? 'closed' : 'open',
+        });
+        deals.push(deal);
+      }
+      buyOrders = [];
+      sellOrders = [];
+    }
+
     for (let i = 0; i < orders.length; i++) {
       let order = orders[i];
       let color = order.side === 'buy' ? cyanBright : greenBright;
 
       if (prevOrder != null && order.side === 'buy' && prevOrder.side === 'sell') {
-        savePnl(prevOrder);
+        if (saveTrades) savePnl(prevOrder);
+        if (saveDeals) saveDeal(prevOrder);
         openDate = order.openDate;
       }
 
@@ -132,11 +160,28 @@ export default class TradeHistory {
           color`[${order.userref}]: ${Utils.toShortDate(order.closeDate)} ${order.side} [${order.txid} / ${localOrder?.id || 'unknown'}] Vol: ${order.volume.toFixed(8)} / ${balance.toFixed(8)} (${(order.volume * order.price).toFixed(2)} ${currency} + ${order.fees.toFixed(2)} ${currency})`,
         );
       }
+
+      if (typeof localOrder !== 'undefined' && saveDeals) {
+        if (order.side === 'buy') buyOrders.push(localOrder.id);
+        else sellOrders.push(localOrder.id);
+      }
+
       prevOrder = order;
     }
-    savePnl(prevOrder);
 
-    if (saveFile) App.writeFile(`${App.DataPath}/${accountClient.id}/${accountClient.id}-data`, dataDeals);
+    if (saveTrades) savePnl(prevOrder);
+    if (saveDeals) saveDeal(prevOrder);
+
+    if (saveTrades) {
+      App.writeFile(`${App.DataPath}/${accountClient.id}/${accountClient.id}-data`, dataDeals);
+    }
+    if (saveDeals) {
+      var dealObject = {};
+      for (let deal of deals) {
+        dealObject[deal.id] = deal;
+      }
+      App.writeFile(`${App.DataPath}/${accountClient.id}/${accountClient.id}-deals-recovered`, dealObject);
+    }
   }
 
   calculatePnL(timeInterval = 'week') {
