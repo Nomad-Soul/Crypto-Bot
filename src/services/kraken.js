@@ -181,7 +181,13 @@ export default class KrakenBot extends ClientBase {
     var order = action.order;
     App.log(`${greenBright`[${order.id}]: editing`} ${yellowBright`${order.txid}`} on ${order.account}`);
     App.log(`Edited price: ${order.price} volume: ${order.volume}`);
-    return this.queryPrivate({ endpoint: 'EditOrder', txid: order.txid, pair: order.pair, price: action.order, volume: order.volume });
+    return this.queryPrivate({
+      endpoint: 'EditOrder',
+      txid: order.txid,
+      pair: order.pair,
+      price: order.price.toFixed(action.pairData.maxQuoteDigits),
+      volume: order.volume.toFixed(action.pairData.maxBaseDigits),
+    });
   }
 
   /**
