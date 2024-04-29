@@ -212,6 +212,7 @@ export default class EcaStacker extends Strategy {
       this.logStatus(
         `[${this.botId}] No actions need to be taken now. Next action in: ${yellowBright`${Utils.timeToHoursOrDaysText(hoursElapsed)}`} (${yellowBright`${Utils.toShortDate(plannedOrder.openDate)}`} ${Utils.toShortTime(plannedOrder.openDate)})`,
       );
+      this.balanceCheck();
     }
   }
 

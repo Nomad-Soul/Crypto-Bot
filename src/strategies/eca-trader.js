@@ -65,26 +65,26 @@ export default class EcaTrader extends Strategy {
       var dealData = this.reportDealStatus(deal);
       var completed = this.#checkCompletion(deal);
 
-      if (completed) continue;
+      if (!completed) {
+        var plannedOrders = deal.orders.map((id) => this.bot.getPlannedOrder(id));
+        for (let i = 0; i < plannedOrders.length; i++) {
+          let plannedOrder = plannedOrders[i];
 
-      var plannedOrders = deal.orders.map((id) => this.bot.getPlannedOrder(id));
-      for (let i = 0; i < plannedOrders.length; i++) {
-        let plannedOrder = plannedOrders[i];
-
-        let exchangeOrder = typeof plannedOrder.txid === 'undefined' ? null : this.accountClient.getLocalOrder(plannedOrder.txid);
-        if (plannedOrder.status === 'planned' && exchangeOrder == null) {
-          this.processPlannedOrder(plannedOrder);
-        } else if (plannedOrder.status === 'pending') {
-          this.processPendingOrder(plannedOrder, deal);
-        } else if (plannedOrder.status === 'waiting') {
-          this.processWaitingOrder(plannedOrder, deal);
-        } else if (plannedOrder.status === 'executed' && exchangeOrder != null) {
-          this.processExecutedOrder(plannedOrder, deal);
+          let exchangeOrder = typeof plannedOrder.txid === 'undefined' ? null : this.accountClient.getLocalOrder(plannedOrder.txid);
+          if (plannedOrder.status === 'planned' && exchangeOrder == null) {
+            this.processPlannedOrder(plannedOrder);
+          } else if (plannedOrder.status === 'pending') {
+            this.processPendingOrder(plannedOrder, deal);
+          } else if (plannedOrder.status === 'waiting') {
+            this.processWaitingOrder(plannedOrder, deal);
+          } else if (plannedOrder.status === 'executed' && exchangeOrder != null) {
+            this.processExecutedOrder(plannedOrder, deal);
+          }
+          //console.log(`${plannedOrder.id}: ${result.requiresNewPlannedOrder}`);
         }
-        //console.log(`${plannedOrder.id}: ${result.requiresNewPlannedOrder}`);
-      }
-      if (this.checkDealIntegrity(deal, dealData)) {
-        App.warning(`Orders added to ${deal.id}`);
+        if (this.checkDealIntegrity(deal, dealData)) {
+          App.warning(`Orders added to ${deal.id}`);
+        }
       }
 
       this.checkDealFlags(deal);
@@ -108,11 +108,11 @@ export default class EcaTrader extends Strategy {
 
     for (const [key, order] of this.flags) {
       var orderValid = typeof order != 'undefined';
-      if (!orderValid) continue;
 
       switch (key) {
         case 'requiresSafetyOrder':
         case 'submitWaitingBuyOrder':
+          if (!orderValid) throw new Error(`${key}: Invalid Order`);
           deal.buyOrders.push(order.id);
           App.log(`Added ${order.id} to ${deal.id} buy orders`);
           this.updateDeals();
@@ -120,6 +120,7 @@ export default class EcaTrader extends Strategy {
 
         case 'requiresTakeProfitOrder':
         case 'submitWaitingSellOrder':
+          if (!orderValid) throw new Error(`${key}: Invalid Order`);
           deal.sellOrders.push(order.id);
           App.log(`Added ${order.id} to ${deal.id} sell orders`);
           this.updateDeals();
@@ -127,9 +128,11 @@ export default class EcaTrader extends Strategy {
 
         case 'submitPlannedBuyOrder':
         case 'submitPlannedSellOrder':
+          if (!orderValid) throw new Error(`${key}: Invalid Order`);
           break;
 
         case 'editTakeProfitOrder':
+          if (!orderValid) throw new Error(`${key}: Invalid Order`);
           App.warning(`Editing ${order.id}`);
           this.actions.push(Action.ReplaceAction(order, this.pairData));
           newOrder = false;
@@ -143,12 +146,12 @@ export default class EcaTrader extends Strategy {
               .filter((order) => order.isActive)
               .map((order) => Action.CancelAction(order)),
           );
+          App.warning('here!!!');
           newOrder = false;
           break;
 
         default:
           App.warning(`Unrecognised flag: ${key}`);
-
           continue;
       }
 
@@ -252,10 +255,11 @@ export default class EcaTrader extends Strategy {
   #checkCompletion(deal) {
     if (deal.isCompleted(this.bot, this.pairData)) {
       this.logStatus(greenBright`Profit: ${deal.calculateProfit(this.bot).toFixed(2)} ${this.botSettings.quote.toUpperCase()}`);
+      this.setFlag({ cancelAllPendingOrders }, null);
       deal.status = 'closed';
       this.updateDeals();
+
       var cancelAllPendingOrders = true;
-      this.setFlag({ cancelAllPendingOrders }, null);
       return true;
     }
     return false;
