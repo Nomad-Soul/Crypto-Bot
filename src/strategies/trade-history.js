@@ -4,9 +4,10 @@ import App from '../app.js';
 import CryptoBot from '../crypto-bot.js';
 import Utils from '../utils.js';
 import ClientBase from '../services/client.js';
-import EcaTrader from './eca-trader.js';
 import ExchangeOrder from '../data/exchange-order.js';
 import TraderDeal from '../data/trader-deal.js';
+import { nanoid } from 'nanoid';
+import BotSettings from '../data/bot-settings.js';
 
 export default class TradeHistory {
   /**
@@ -53,13 +54,14 @@ export default class TradeHistory {
   /**
    *
    * @param {ClientBase} accountClient
-   * @param {{verbose: boolean, saveFile: boolean}} options
+   * @param {string} botId
+   * @param {{verbose: boolean, redownload: boolean, saveTrades: boolean, saveDeals: boolean}} options
    */
-  async analyseOrders(accountClient, options = undefined) {
-    const { verbose, saveFile } = options || { verbose: false, saveFile: false };
+  async analyseOrders(accountClient, botId, options = undefined) {
+    const { verbose, redownload, saveTrades, saveDeals } = options || { verbose: false, redownload: false, saveTrades: false, saveDeals: false };
 
     var balance = 0;
-    await accountClient.downloadAllOrders('closed');
+    if (redownload) await accountClient.downloadAllOrders('closed');
 
     var dataDeals = [];
     var dealIndex = 1;
@@ -73,7 +75,7 @@ export default class TradeHistory {
     var proceeds = 0;
     var openDate = orders[0].openDate;
     var closeDate;
-
+    var currentPrice = this.#bot.getPrice(this.#botSettings.pair);
     /**
      *
      * @param {ExchangeOrder} lastOrder
@@ -83,7 +85,13 @@ export default class TradeHistory {
       if (verbose) {
         var colour = profit > 0 ? greenBright : redBright;
         if (profit > 100) colour = magentaBright;
-        App.log(colour`Profit: ${profit.toFixed(2)} (${proceeds.toFixed(2)}:${costBasis.toFixed(2)})`);
+        else if (profit < 0 && lastOrder.side === 'buy') {
+          profit = balance * currentPrice - costBasis;
+        }
+
+        App.log(
+          colour`Profit: ${profit.toFixed(2)} (${proceeds.toFixed(2)}:${costBasis.toFixed(2)}) - remaining balance: ${balance.toFixed(4)} (${(balance * currentPrice).toFixed(2)} ${App.locale.currency})`,
+        );
       }
       closeDate = prevOrder.closeDate;
       dataDeals.push({
@@ -91,13 +99,38 @@ export default class TradeHistory {
         openDate: openDate,
         closeDate: closeDate,
         costBasis: Number(costBasis.toFixed(2)),
-        proceeds: Number(proceeds.toFixed(2)),
+        proceeds: proceeds > 0 ? Number(proceeds.toFixed(2)) : Number((balance * currentPrice).toFixed(2)),
         currency: lastOrder.pair.split('/')[1],
-        reliable: balance >= 0 && balance * lastOrder.price < 0.5,
+        reliable: balance >= 0 && balance * lastOrder.price < 1,
       });
       balance = 0;
       costBasis = 0;
       proceeds = 0;
+    }
+
+    var buyOrders = [];
+    var sellOrders = [];
+    /** @type {TraderDeal[]} */
+    var deals = [];
+
+    /**
+     *
+     * @param {ExchangeOrder} lastOrder
+     */
+    function saveDeal(lastOrder) {
+      if (buyOrders.length > 0) {
+        var deal = new TraderDeal({
+          index: dealIndex,
+          botId: botId,
+          buyOrders: buyOrders,
+          sellOrders: sellOrders,
+          account: accountClient.id,
+          status: lastOrder.side === 'sell' ? 'closed' : 'open',
+        });
+        deals.push(deal);
+      }
+      buyOrders = [];
+      sellOrders = [];
     }
 
     for (let i = 0; i < orders.length; i++) {
@@ -105,8 +138,8 @@ export default class TradeHistory {
       let color = order.side === 'buy' ? cyanBright : greenBright;
 
       if (prevOrder != null && order.side === 'buy' && prevOrder.side === 'sell') {
-        savePnl(order);
-
+        if (saveTrades) savePnl(prevOrder);
+        if (saveDeals) saveDeal(prevOrder);
         openDate = order.openDate;
       }
 
@@ -127,11 +160,28 @@ export default class TradeHistory {
           color`[${order.userref}]: ${Utils.toShortDate(order.closeDate)} ${order.side} [${order.txid} / ${localOrder?.id || 'unknown'}] Vol: ${order.volume.toFixed(8)} / ${balance.toFixed(8)} (${(order.volume * order.price).toFixed(2)} ${currency} + ${order.fees.toFixed(2)} ${currency})`,
         );
       }
+
+      if (typeof localOrder !== 'undefined' && saveDeals) {
+        if (order.side === 'buy') buyOrders.push(localOrder.id);
+        else sellOrders.push(localOrder.id);
+      }
+
       prevOrder = order;
     }
-    savePnl(prevOrder);
 
-    if (saveFile) App.writeFile(`${App.DataPath}/${accountClient.id}/${accountClient.id}-data`, dataDeals);
+    if (saveTrades) savePnl(prevOrder);
+    if (saveDeals) saveDeal(prevOrder);
+
+    if (saveTrades) {
+      App.writeFile(`${App.DataPath}/${accountClient.id}/${accountClient.id}-data`, dataDeals);
+    }
+    if (saveDeals) {
+      var dealObject = {};
+      for (let deal of deals) {
+        dealObject[deal.id] = deal;
+      }
+      App.writeFile(`${App.DataPath}/${accountClient.id}/${accountClient.id}-deals-recovered`, dealObject);
+    }
   }
 
   calculatePnL(timeInterval = 'week') {
@@ -220,28 +270,20 @@ export default class TradeHistory {
 
     var items = [];
     var trades = [...dataset.keys()];
-    App.warning(trades[0]);
     var firstTradeArgs = trades[0].split('-');
     var lastTradeArgs = trades.at(-1).split('-');
     var startDate = new Date(trades[0]);
     var endDate = new Date(trades.at(-1));
-    // var firstYear = Number(firstTradeArgs[0]);
-    // var firstMonth = Number(firstTradeArgs[1]);
-    // var lastYear = Number(lastTradeArgs[0]);
-    // var lastMonth = Number(lastTradeArgs[1]);
 
     var delta = countMonths(startDate, endDate);
-    // console.log([firstYear, firstMonth, lastYear, lastMonth]);
     var prevDate = startDate;
     for (let m = 0; m <= delta; m++) {
       var date = new Date(new Date(prevDate).setMonth(prevDate.getMonth() + m));
       var label = `${date.getFullYear()}-${date.toLocaleString(App.locale.id, { month: '2-digit' }).toString().padStart(2, '0')}`;
-      console.log(label);
       if (!dataset.has(label)) {
         items.push([label, { pnl: 0, reliable: true }]);
       } else items.push([label, dataset.get(label)]);
     }
-    console.log(items);
     return items;
   }
 
