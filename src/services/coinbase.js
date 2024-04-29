@@ -100,7 +100,7 @@ export default class CoinbaseClient extends ClientBase {
     });
   }
 
-  async downloadOrders(status, options = undefined) {
+  async requestOrdersByStatus(status, options = undefined) {
     App.log(`${cyanBright`Downloading`} ${this.id} ${status} orders`);
     return this.requestOrders(status, options).then(
       (response) =>
@@ -253,8 +253,8 @@ export default class CoinbaseClient extends ClientBase {
     return new Promise((resolve) => resolve({ result: result, newStatus: newStatus }));
   }
 
-  async processActionSync(action) {
-    var response = await this.processAction(action);
+  async processAction(action) {
+    var response = await this.executeAction(action);
     //App.printObject(action);
     if (!response.data.success) {
       App.log(redBright`Response follows:`, true);
@@ -289,7 +289,7 @@ export default class CoinbaseClient extends ClientBase {
    * @param {string[]} txidArray
    * @returns
    */
-  async downloadOrdersByTxid(txidArray) {
+  async requestOrdersByTxid(txidArray) {
     return true;
   }
 

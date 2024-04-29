@@ -30,7 +30,7 @@ export default class ExchangeClient extends ClientBase {
     this.id = 'ccxt';
     this.requestTickers(['btc/eur'.toUpperCase()]).then((response) => console.log(response));
     this.requestBalance().then((r) => console.log(r));
-    this.requestOrder('OJVWDS-RYFDV-R2FDGF').then((r) => console.log(r));
+    //this.requestOrder('OJVWDS-RYFDV-R2FDGF').then((r) => console.log(r));
     //this.requestOrder('85b2452f-e584-4cd2-b328-a70e6caf7e7b').then((r) => console.log(r));
   }
 
@@ -71,7 +71,7 @@ export default class ExchangeClient extends ClientBase {
    */
   async submitOrder(action) {
     var order = action.order;
-    App.log(`${greenBright`[${order.id}]: submitting`} ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${action.account}`}`);
+    App.log(`${greenBright`[${order.id}]: submitting`} ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
     return this.#ccxtClient.createOrder(order.pair.toUpperCase(), order.type, order.direction, order.volume, order.price);
   }
 
@@ -118,6 +118,53 @@ export default class ExchangeClient extends ClientBase {
 
   /**
    *
+   * @param {string} status
+   * @param {boolean} refresh
+   * @returns {Promise<any[]>}
+   */
+  async requestOrdersByStatus(status, refresh = false) {
+    var orders;
+    if (refresh) {
+      var supported = true;
+      switch (status) {
+        case 'open':
+          if (this.#ccxtClient.has['fetchOpenOrders']) orders = await this.#ccxtClient.fetchOpenOrders();
+          else supported = false;
+          break;
+
+        case 'closed':
+          if (this.#ccxtClient.has['fetchClosedOrders']) orders = await this.#ccxtClient.fetchClosedOrders();
+          else supported = false;
+          break;
+
+        case 'cancelled':
+          if (this.#ccxtClient.has['fetchCanceledAndClosedOrders']) orders = await this.#ccxtClient.fetchCanceledAndClosedOrders();
+          else supported = false;
+          break;
+      }
+
+      if (!supported) {
+        if (this.#ccxtClient.has['fetchOrders']) orders = await this.#ccxtClient.fetchOrders().then((orders) => orders.filter((o) => o.status === 'status'));
+        else throw new Error(`${this.#ccxtClient.id} does not support any method to download orders by status`);
+      }
+
+      App.log(`Received ${cyanBright`${orders.length.toString()}`} ${status} orders from ${this.id}`);
+    } else orders = [...this.orders.values()].filter((o) => o.status === 'status');
+    return orders;
+  }
+
+  /**
+   *
+   * @param {import('ccxt').Order[]} orders
+   */
+  updateOrders(orders) {
+    for (const order of orders) {
+      this.setExchangeOrder(order.id, ExchangeClient.ConvertCcxtOrderToExchangeOrder(order));
+    }
+  }
+
+  /**
+   *
    * @param {string[]} pairs
    * @returns {Promise<>}
    */
@@ -143,9 +190,8 @@ export default class ExchangeClient extends ClientBase {
    * @param {string[]} txidArray
    * @returns {Promise<>}
    */
-  async downloadOrdersByTxid(txidArray) {
+  async requestOrdersByTxid(txidArray) {
     App.log(greenBright`Downloading ${this.id} orders ${yellowBright`${txidArray.join(', ')}`}`, true);
-    //this.#ccxtClient.fetchOrders(pair);
 
     if (this.#ccxtClient.id === 'kraken') {
       /** @type {kraken} */
@@ -222,12 +268,6 @@ export default class ExchangeClient extends ClientBase {
       pair: order.symbol.toLowerCase(),
     });
   }
-
-  /**
-   *
-   * @param {import('ccxt').Order} order
-   */
-  static ConvertToExchangeOrder(order) {}
 
   /**
    * @param {any} precisionMode

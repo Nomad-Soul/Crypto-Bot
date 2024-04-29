@@ -70,7 +70,7 @@ export default class ClientBase {
    * @param {Action} action
    * @returns
    */
-  async processAction(action) {
+  async executeAction(action) {
     switch (action.command) {
       case 'submitOrder':
         return this.submitOrder(action);
@@ -149,7 +149,7 @@ export default class ClientBase {
    * @param {Object} action
    * @returns {Promise<any>}
    */
-  async processActionSync(action) {
+  async processAction(action) {
     App.error('not implemented');
   }
 
@@ -282,7 +282,7 @@ export default class ClientBase {
    * @param {string[]} txidArray
    * @returns {Promise<>}
    */
-  async downloadOrdersByTxid(txidArray) {
+  async requestOrdersByTxid(txidArray) {
     App.error('not implemented');
   }
 
@@ -302,7 +302,7 @@ export default class ClientBase {
     this.pairs = new Map(Object.entries(assets));
   }
 
-  async downloadOrders(status) {
+  async requestOrdersByStatus(status) {
     App.error('not implemented');
   }
 

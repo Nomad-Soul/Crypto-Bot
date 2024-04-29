@@ -179,9 +179,9 @@ export default class CryptoBot {
     if (account === null) accountsToCheck = Object.entries(this.#clients);
     else accountsToCheck.push([account, this.#clients[account]]);
 
-    accountsToCheck.forEach(([key, client]) => {
-      promises.push(client.downloadOrders('open').then(() => (this.#settings.lastOpendOrderCheck = new Date(Date.now()))));
-      promises.push(client.downloadOrders('closed').then(() => (this.#settings.lastClosedOrderCheck = new Date(Date.now()))));
+    accountsToCheck.forEach((/** @type {[string, ClientBase]} */ [key, client]) => {
+      promises.push(client.requestOrdersByStatus('open').then(() => (this.#settings.lastOpendOrderCheck = new Date(Date.now()))));
+      promises.push(client.requestOrdersByStatus('closed').then(() => (this.#settings.lastClosedOrderCheck = new Date(Date.now()))));
       promises.push(client.requestBalance());
     });
 
@@ -404,7 +404,7 @@ export default class CryptoBot {
       if (response) this.checkPendingOrders();
       var missingOrders = this.listMissingLocalOrders();
       for (const [exchange, txidArray] of missingOrders) {
-        if (txidArray.length > 0) this.getClient(exchange).downloadOrdersByTxid(txidArray);
+        if (txidArray.length > 0) this.getClient(exchange).requestOrdersByTxid(txidArray);
       }
 
       App.writeFile('settings', this.#settings, (key, value) => {
@@ -479,7 +479,7 @@ export default class CryptoBot {
     if (typeof order === 'undefined') throw new Error(`Cannot find order in ${action.command}`);
     var accountClient = this.getClient(order.account);
 
-    response = await accountClient.processActionSync(action);
+    response = await accountClient.processAction(action);
     if (typeof response === 'undefined') throw new Error(redBright`No response!`);
 
     switch (action.command) {
@@ -499,7 +499,7 @@ export default class CryptoBot {
               `[${order.id}] submitted ${order.type} order ${order.direction} at ${txinfo.price} (${txinfo.cost.toFixed(2)} €) on ${order.account}`,
             );
 
-            if (txinfo.status === 'open') accountClient.downloadOrders('open');
+            if (txinfo.status === 'open') accountClient.requestOrdersByStatus('open');
             this.updatePlanSchedule();
             return txinfo;
           }

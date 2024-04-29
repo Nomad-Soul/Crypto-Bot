@@ -181,7 +181,13 @@ export default class KrakenBot extends ClientBase {
     var order = action.order;
     App.log(`${greenBright`[${order.id}]: editing`} ${yellowBright`${order.txid}`} on ${order.account}`);
     App.log(`Edited price: ${order.price} volume: ${order.volume}`);
-    return this.queryPrivate({ endpoint: 'EditOrder', txid: order.txid, pair: order.pair, price: action.order, volume: order.volume });
+    return this.queryPrivate({
+      endpoint: 'EditOrder',
+      txid: order.txid,
+      pair: order.pair,
+      price: order.price.toFixed(action.pairData.maxQuoteDigits),
+      volume: order.volume.toFixed(action.pairData.maxBaseDigits),
+    });
   }
 
   /**
@@ -199,8 +205,8 @@ export default class KrakenBot extends ClientBase {
    *
    * @param {*} action
    */
-  async processActionSync(action) {
-    var response = await this.processAction(action);
+  async processAction(action) {
+    var response = await this.executeAction(action);
     if (typeof response.error != 'undefined') {
       App.log(redBright`Response follows:`, true);
       App.printObject(response.error);
@@ -241,7 +247,7 @@ export default class KrakenBot extends ClientBase {
   /**
    * @param {string[]} txidArray
    */
-  async downloadOrdersByTxid(txidArray) {
+  async requestOrdersByTxid(txidArray) {
     var txidString = txidArray.join(',');
     var data = {
       endpoint: 'QueryOrders',
@@ -310,7 +316,7 @@ export default class KrakenBot extends ClientBase {
   /**
    * @param {string} status
    */
-  async downloadOrders(status) {
+  async requestOrdersByStatus(status) {
     App.log(`${cyanBright`Downloading`} ${this.id} ${status} orders`);
     return this.requestOrders(status).then(
       (response) =>
