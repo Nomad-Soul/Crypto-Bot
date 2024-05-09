@@ -25,10 +25,7 @@ server.use('/css', express.static(path.join(__dirname, '../node_modules/bootswat
 App.server = server.listen(port, () => {
   App.log(magentaBright`Crypto-Bot listening on port ${port.toString()}`, true);
 
-  var pricePromise = bot.updatePricesSync();
-  var syncPromise = bot.syncExchangeStatus();
-
-  Promise.all([pricePromise, syncPromise]).then(() => bot.processPlans());
+  update();
 });
 
 server.get('/api', async function (req, res) {
@@ -85,7 +82,8 @@ server.get('/api', async function (req, res) {
       var th = new TradeHistory(bot, botId);
 
       if (botSettings.strategyType === 'eca-trader') {
-        //await th.analyseOrders(bot.getClient('krakenBot'), { verbose: true, saveFile: true });
+        //await th.analyseOrders(bot.getClient('krakenBot'), botId, 
+        //  { verbose: true, redownload: false, saveTrades: false, saveDeals:false });
         response = { status: 'success', request: endpoint, data: th.calculatePnL(groupBy), chartType: 'traderBot', pair: bot.getBotSettings(botId).pair };
       } else response = { status: 'failed' };
       break;
@@ -149,8 +147,7 @@ server.post('/api', async function (req, res) {
 
 cron.schedule('*/30 * * * *', () => {
   try {
-    bot.updatePricesSync().then(() => bot.processPlans());
-    App.writeLog();
+    update().then( ()=> App.writeLog());
   } catch (error) {
     bot.telegramBot.log('Oh no!\n' + error);
     App.log(error);
@@ -167,6 +164,13 @@ async function stopServer() {
   App.writeLog();
   bot.saveAllOrders();
   process.exit();
+}
+
+async function update() {
+  var pricePromise = bot.updatePricesSync();
+  var syncPromise = bot.syncExchangeStatus();
+
+  return Promise.all([pricePromise, syncPromise]).then(() => bot.processPlans());  
 }
 
 function formatEndpoint(req) {

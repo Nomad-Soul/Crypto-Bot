@@ -33,7 +33,7 @@ async function init() {
       var accountData = accounts[account];
       if (accountData.showDealPreview) receiveData('DealPreview', 'dealPreview', { target: 'api', botId: accountData.showDealPreview[0].botId });
       if (accountData.tradeBalance) {
-        receiveData('TradeBalance', 'tradeHistory', { target: 'api', botId: accountData.tradeBalance[0].botId, groupBy: 'month' });
+        receiveData('TradeBalance', 'tradeHistory', { target: 'api', botId: accountData.tradeBalance[0].botId, groupBy: accountData.tradeBalance[0].groupBy });
       }
       if (accountData.purchaseHistory) {
         receiveData('PurchaseHistory', 'stats', {
@@ -220,7 +220,7 @@ async function formatChart(dataset) {
             },
             tooltip: {
               callbacks: {
-                label: (value) => `${value?.parsed?.y.toFixed(4)} (${data[value.dataIndex][1].pnl})`,
+                label: (value) => `${value?.parsed?.y.toFixed(2)} (${data[value.dataIndex][1].pnl.toFixed(2)})`,
               },
             },
           },
@@ -230,13 +230,14 @@ async function formatChart(dataset) {
     }
 
     case 'stackerBot': {
+      const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
       var botId = Object.values(accounts).find((account) => typeof account.stackingHistory[0].botId != 'undefined').stackingHistory[0].botId;
       var botData = data[botId];
       let currencyLabels = [botData.base, botData.quote];
       new Chart(document.getElementById(dataset.chartType), {
         type: 'bar',
         data: {
-          labels: Object.keys(botData).slice(0, 2),
+          labels: Object.keys(botData).filter(month => months.includes(month.toLowerCase())),
           datasets: [
             {
               label: `${currencyLabels[0]} bought`,
@@ -247,7 +248,7 @@ async function formatChart(dataset) {
               data: Array.from(Object.values(botData)).map((entry) => entry.volume),
             },
             {
-              label: `${currencyLabels[0]} paid`,
+              label: `${currencyLabels[1]} paid`,
               type: 'line',
               yAxisID: 'yQuote',
               order: 0,

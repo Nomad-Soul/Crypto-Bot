@@ -146,7 +146,6 @@ export default class EcaTrader extends Strategy {
               .filter((order) => order.isActive)
               .map((order) => Action.CancelAction(order)),
           );
-          App.warning('here!!!');
           newOrder = false;
           break;
 
@@ -198,9 +197,10 @@ export default class EcaTrader extends Strategy {
     deal.buyOrders.filter((id) => !this.bot.hasPlannedOrder(id)).forEach((id) => removeCancelledOrders(id, deal.buyOrders));
     deal.sellOrders.filter((id) => !this.bot.hasPlannedOrder(id)).forEach((id) => removeCancelledOrders(id, deal.sellOrders));
 
+    var safetyOrdersRemaining = this.botSettings.options.maxSafetyOrders + 1 - deal.buyOrders.length;
     // Check if more safety orders are needed
-    if (deal.buyOrders.length <= this.botSettings.options.maxSafetyOrders + 1) {
-      this.logStatus(`${this.botSettings.options.maxSafetyOrders + 1 - deal.buyOrders.length} more safety orders possible.`);
+    if (safetyOrdersRemaining > 0) {
+      this.logStatus(`${safetyOrdersRemaining} more safety orders possible.`);
       var plannedOrders = deal.buyOrders.map((id) => this.bot.getPlannedOrder(id));
       var requiresSafetyOrder = plannedOrders.every((order) => order.isClosed);
       if (requiresSafetyOrder) {
@@ -211,7 +211,8 @@ export default class EcaTrader extends Strategy {
         this.bot.updatePlanSchedule();
         ordersAdded = true;
       } else {
-        this.logStatus(`${deal.id} ${yellowBright`already`} has an open buy order: ${cyanBright`${plannedOrders.find((o) => !o.isClosed).id}`}`);
+        var plannedOrder = plannedOrders.find((o) => !o.isClosed);
+        this.logStatus(`${deal.id} ${yellowBright`already`} has a ${plannedOrder.status} ${plannedOrder.type} buy order: ${cyanBright`${plannedOrder.id}`}`);
       }
     } else App.warning('No more safety orders possible.');
 
@@ -377,10 +378,10 @@ export default class EcaTrader extends Strategy {
   canSubmit(order) {
     if (order.direction === 'buy') {
       var balanceCheck = this.balanceCheck(order.volumeQuote);
-      return balanceCheck && order.isScheduledForToday;
+      return balanceCheck && (order.isScheduledForToday || order.isPastExecutionDate);
     } else {
       var volumeCheck = this.volumeCheck(order.volume);
-      return volumeCheck && order.isScheduledForToday;
+      return volumeCheck && (order.isScheduledForToday || order.isPastExecutionDate);
     }
   }
 

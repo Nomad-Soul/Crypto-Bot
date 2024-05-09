@@ -22,7 +22,9 @@ export default class Renderer {
 
   reportMissingOrders() {
     let data = this.#bot.getPlannedOrders('all');
-    var filtered = data.filter((order) => !this.#bot.getClient(order.account).hasLocalExchangeOrder(order.txid)).map((order) => order.txid);
+    var filtered = data
+      .filter((order) => !this.#bot.getClient(order.account).hasLocalExchangeOrder(order.txid))
+      .map((order) => order.txid);
     return filtered;
   }
 
@@ -333,7 +335,10 @@ export default class Renderer {
       html += this.renderOrder(order, pairData);
     }
 
-    html += this.renderDealPreviewTotal(orders, { makerFees: accountClient.makerFees, takerFees: accountClient.takerFees });
+    html += this.renderDealPreviewTotal(orders, {
+      makerFees: accountClient.makerFees,
+      takerFees: accountClient.takerFees,
+    });
     return { html: html };
   }
 
@@ -359,8 +364,12 @@ export default class Renderer {
       .filter((order) => order.isClosed)
       .sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime())
       .map((order) => this.#bot.getLocalExchangeOrderFromPlannedOrderId(order.id, openDeal.account));
-    let nextBuyOrder = orders.find((order) => !order.isClosed && order.direction === 'buy') ?? dealPlanner.calculateSafetyOrder(openDeal);
-    let takeProfitOrder = openDeal.sellOrders[0] ? this.#bot.getPlannedOrder(openDeal.sellOrders[0]) : dealPlanner.proposeTakeProfitOrder(openDeal);
+    let nextBuyOrder =
+      orders.find((order) => !order.isClosed && order.direction === 'buy') ??
+      dealPlanner.calculateSafetyOrder(openDeal);
+    let takeProfitOrder = openDeal.sellOrders[0]
+      ? this.#bot.getPlannedOrder(openDeal.sellOrders[0])
+      : dealPlanner.proposeTakeProfitOrder(openDeal);
 
     let safetyOrderPrice = nextBuyOrder.price;
     let takeProfitPrice = takeProfitOrder.price;
@@ -390,6 +399,9 @@ export default class Renderer {
     let labelProfit = widthPnL < 0 ? '' : currentPrice;
 
     var quoteCurrency = pairData.quote.toUpperCase();
+
+    var nextClass = 'text-neutral';
+    if (dealPlanner.maxSafetyOrders + 1 === openDeal.buyOrders.length) nextClass = 'text-warning';
 
     let dealTemplate = `
     <div class="bg-dark-container p-md-4 p-2"><div class="row">
@@ -423,7 +435,7 @@ export default class Renderer {
           </div>
       </div>
       <div class="row">
-        <p class="lead text-start">Next safety order: buy ${nextBuyOrder.volume} ${pairData.base} @ ${nextBuyOrder.price.toFixed(2)} (${(nextBuyOrder.volume * nextBuyOrder.price).toFixed(2)} ${quoteCurrency})</p>
+        <p class="lead text-start ${nextClass}">Next safety order: buy ${nextBuyOrder.volume} ${pairData.base} @ ${nextBuyOrder.price.toFixed(2)} (${(nextBuyOrder.volume * nextBuyOrder.price).toFixed(2)} ${quoteCurrency})</p>
       </div>
       `;
 

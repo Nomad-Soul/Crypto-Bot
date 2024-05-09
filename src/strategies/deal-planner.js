@@ -53,7 +53,6 @@ export default class DealPlanner {
     if (n - 1 >= this.maxSafetyOrders) {
       let message = `[${this.botId}]: max Safety Orders reached: ${n - 1}`;
       App.warning(message);
-      return null;
     }
     var pair = this.botSettings.pair;
     let safetyOrder = this.safetyOrder;
