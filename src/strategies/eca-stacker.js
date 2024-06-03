@@ -77,12 +77,13 @@ export default class EcaStacker extends Strategy {
       } else if (plannedOrder.status === 'executed' && exchangeOrder != null && !exchangeOrder.isOpen) {
         this.processExecutedOrder(plannedOrder);
       } else {
-        this.logStatus('Unexpected branch.', 'warning');
+        this.logStatus(`Unexpected branch for ${this.botId}`, 'warning');
         App.printObject(plannedOrder);
-        App.printObject(exchangeOrder);
       }
     }
 
+    if (this.botId === 'sol/eur')
+      this.balanceCheck();
     this.checkStatus(plannedOrders);
     this.checkDealFlags();
 

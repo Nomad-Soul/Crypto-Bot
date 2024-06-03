@@ -238,6 +238,8 @@ export default class CryptoBot {
       .filter((order) => order.status === 'executed' && !this.getClient(order.account).hasLocalExchangeOrder(order.txid))
       .forEach((order) => {
         missingOrders.get(order.account).push(order.txid);
+        if (!order.txid)
+          App.warning(`Order ${order.id} contains empty txid`);
       });
 
     return missingOrders;

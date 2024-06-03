@@ -80,10 +80,16 @@ export default class CoinbaseClient extends ClientBase {
     return this.submitRequest('orders', 'POST', data);
   }
 
+  /**
+   *
+   * @param {Action} action
+   * @returns
+   */
   async cancelOrder(action) {
-    App.log(`[${action.id}]: cancelling ${yellowBright`${action.txid}`} on ${action.exchange} (${action.isTest})`);
+    var order = action.order;
+    App.log(`[${order.id}]: cancelling ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
     let data = {
-      order_ids: [action.txid],
+      order_ids: [order.txid],
     };
     return this.submitRequest('orders/batch_cancel', 'POST', data);
   }
@@ -260,6 +266,7 @@ export default class CoinbaseClient extends ClientBase {
       App.log(redBright`Response follows:`, true);
       let error = response.data.error_response;
       App.printObject(error);
+      App.printObject(response.data);
       App.error(error.preview_failure_reason, false);
       App.error(error.message, false);
       throw new Error(error.error);
@@ -303,6 +310,8 @@ export default class CoinbaseClient extends ClientBase {
       var type = txinfo.order_type === 'LIMIT' ? 'limit' : 'market';
       var status = txinfo.status === 'FILLED' ? 'closed' : 'open';
 
+      // App.error('CB transaction:', false);
+      // App.printObject(txinfo);
       return new ExchangeOrder({
         type: type,
         status: status,

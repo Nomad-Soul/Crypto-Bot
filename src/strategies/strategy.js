@@ -140,6 +140,7 @@ export default class Strategy {
       );
     } catch (e) {
       App.warning('Unexpected error in balanceCheck');
+      console.log(this.pairData);
       console.log([availableBalance, volumeQuote, this.currentPrice]);
       return false;
     }

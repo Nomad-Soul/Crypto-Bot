@@ -255,6 +255,11 @@ export default class KrakenBot extends ClientBase {
     };
     if (this.pendingRequests.has(txidString)) return this.pendingRequests.get(txidString);
 
+    if (txidArray.some(txid => !txid)) {
+      App.warning('Contains empty txid');
+      App.error(new Error().stack);
+    }
+
     App.log(greenBright`Downloading ${this.id} orders ${yellowBright`${txidArray.join(', ')}`}`, true);
     var promise = this.queryPrivate(data, false, true).then((response) => {
       try {
@@ -583,6 +588,7 @@ export default class KrakenBot extends ClientBase {
     try {
       var type = txinfo.descr.ordertype;
     } catch (e) {
+      App.error('Error in Kraken.ConvertToExchangeOrder', false);
       App.printObject(txinfo);
       App.rethrow(e);
     }
