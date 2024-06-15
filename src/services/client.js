@@ -198,7 +198,12 @@ export default class ClientBase {
 
     let order = this.orders.get(orderId);
 
-    if (redownload || !order) order = await this.queryOrder(orderId);
+    if (redownload || typeof(order)!=='object') {
+      App.warning(`Requesting [${orderId}]`);
+      order = await this.queryOrder(orderId);
+    }
+    if (typeof(order.descr)==='undefined')
+      order = order[orderId];
 
     if (typeof order === 'undefined') {
       let errorMsg = `Cannot find ${this.id} order ${orderId}`;

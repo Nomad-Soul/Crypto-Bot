@@ -228,7 +228,7 @@ export default class EcaTrader extends Strategy {
       // check if the take profit order needs to be adjusted
       var volumeAvailable = this.accountClient.getBalance(this.pairData.base);
       var volumeMatch = sellOrder.volume === volumeAvailable;
-      var priceMatch = dealData.targetPrice === sellOrder.price;
+      var priceMatch = Math.abs(dealData.targetPrice - sellOrder.price)<0.01;
       var updateTakeProfitOrder = !volumeMatch || !priceMatch;
       if (updateTakeProfitOrder) {
         App.printObject(sellOrder);

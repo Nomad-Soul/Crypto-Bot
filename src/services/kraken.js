@@ -224,7 +224,9 @@ export default class KrakenBot extends ClientBase {
       endpoint: 'QueryOrders',
       txid: txid,
     };
-    if (this.pendingRequests.has(txid)) return this.pendingRequests.get(txid);
+    if (this.pendingRequests.has(txid)) {
+      return this.pendingRequests.get(txid);
+      }
 
     App.log(greenBright`Downloading ${this.id} order ${yellowBright`${txid}`}`, true);
     var promise = this.queryPrivate(data, false, true).then((response) => {
@@ -267,7 +269,7 @@ export default class KrakenBot extends ClientBase {
           order.txid = txid;
           this.setExchangeOrder(txid, order);
         });
-        return true;
+        return response;
       } catch (e) {
         App.warning(`${this.id}/QueryPrivate response:`);
         App.printObject(response, false);
@@ -490,7 +492,7 @@ export default class KrakenBot extends ClientBase {
    * @returns
    */
   convertResponseToExchangeOrder(response, orderId) {
-    var exchangeOrder = KrakenBot.ConvertToExchangeOrder(response);
+    var exchangeOrder = KrakenBot.ConvertToExchangeOrder(response, orderId);
     if (typeof exchangeOrder.txid === 'undefined' && orderId !== 'undefined') exchangeOrder.txid = orderId;
     return exchangeOrder;
   }
@@ -524,6 +526,7 @@ export default class KrakenBot extends ClientBase {
       result = true;
       newStatus = plannedOrder.status;
     } else if (exchangeOrder.status === 'cancelled') {
+      App.printObject(exchangeOrder);
       plannedOrder.status = 'cancelled';
       plannedOrder.closeDate = exchangeOrder.closeDate;
       result = true;
@@ -584,11 +587,11 @@ export default class KrakenBot extends ClientBase {
     return data;
   }
 
-  static ConvertToExchangeOrder(txinfo) {
+  static ConvertToExchangeOrder(txinfo, orderId) {
     try {
       var type = txinfo.descr.ordertype;
     } catch (e) {
-      App.error('Error in Kraken.ConvertToExchangeOrder', false);
+      App.error(`[${orderId}]: Error in Kraken.ConvertToExchangeOrder`, false);
       App.printObject(txinfo);
       App.rethrow(e);
     }
