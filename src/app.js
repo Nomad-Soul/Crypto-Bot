@@ -70,6 +70,7 @@ export default class App {
   }
 
   static printObject(object, timestamp = true) {
+    this.log((new Error()).stack?.split('\n')[2]?.trim().split(' ')[1]);
     this.log(JSON.stringify(object, null, 2), timestamp, redBright);
   }
 

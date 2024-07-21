@@ -127,8 +127,8 @@ export default class EcaPlanner {
 
     var minValue = Math.min(...distances);
     var closestDay = distances.findIndex((e) => e === minValue) === 0 ? nextDesiredDay : prevDesiredDay;
-    // console.log(`N: ${nextDesiredDay} P: ${prevDesiredDay} | C: ${closestDay} / M: ${minValue}}`);
-    // console.log(distances.findIndex((e) => e === minValue));
+    if (closestDay < 14)
+      closestDay+=7;
 
     var chosenDate = new Date(target.getFullYear(), month, closestDay, 0, 0, 0);
     var nextDay = new Date(chosenDate.getTime() + 60000 * 60 * 24);

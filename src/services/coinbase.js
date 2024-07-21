@@ -19,6 +19,9 @@ export default class CoinbaseClient extends ClientBase {
     super(accountSettings);
   }
 
+  /**
+   * @param {string} status
+   */
   static ConvertStatusToCoinbase(status) {
     var cbStatus = '';
     switch (status) {
@@ -95,12 +98,12 @@ export default class CoinbaseClient extends ClientBase {
   }
 
   async requestOrders(status, options = undefined) {
-    const { num, startDate } = options || { num: 100, startDate: new Date('01/01/2024') };
+    const { num, startDate } = options || { num: 250, startDate: new Date('01/01/2024') };
 
     var requestedStatus = CoinbaseClient.ConvertStatusToCoinbase(status);
-    if (requestedStatus === 'FILLED') requestedStatus = 'CANCELLED';
+    if (requestedStatus === 'FILLED') requestedStatus += '&status=CANCELLED';
     return this.submitRequest('orders/historical/batch', 'GET', {
-      order_status: requestedStatus,
+      status: requestedStatus,
       start_date: startDate.toISOString(),
       limit: num,
     });
@@ -146,6 +149,7 @@ export default class CoinbaseClient extends ClientBase {
       return false;
     }
     let statusOrders = orders.filter((order) => order.status === CoinbaseClient.ConvertStatusToCoinbase(status));
+
     let statusObject = {};
 
     statusOrders.forEach((order) => {
@@ -259,6 +263,9 @@ export default class CoinbaseClient extends ClientBase {
     return new Promise((resolve) => resolve({ result: result, newStatus: newStatus }));
   }
 
+  /**
+   * @param {Action} action
+   */
   async processAction(action) {
     var response = await this.executeAction(action);
     //App.printObject(action);
@@ -287,8 +294,8 @@ export default class CoinbaseClient extends ClientBase {
     return `${botSettings.base}-${botSettings.quote}`.toUpperCase();
   }
 
-  convertResponseToExchangeOrder(response) {
-    return CoinbaseClient.ConvertToExchangeOrder(response);
+  convertResponseToExchangeOrder(response, orderId) {
+    return CoinbaseClient.ConvertToExchangeOrder(response, orderId);
   }
 
   /**
@@ -303,9 +310,10 @@ export default class CoinbaseClient extends ClientBase {
   /**
    *
    * @param {any} txinfo
+   * @param {string} orderId
    * @returns {ExchangeOrder}
    */
-  static ConvertToExchangeOrder(txinfo) {
+  static ConvertToExchangeOrder(txinfo, orderId) {
     try {
       var type = txinfo.order_type === 'LIMIT' ? 'limit' : 'market';
       var status = txinfo.status === 'FILLED' ? 'closed' : 'open';
@@ -321,9 +329,9 @@ export default class CoinbaseClient extends ClientBase {
         volume: Number(txinfo.filled_size),
         price: Number(type === 'market' ? txinfo.average_filled_price : txinfo.order_configuration.limit_limit_gtc.limit_price),
         cost: Number(
-          txinfo.filled_value == 0
-            ? txinfo.order_configuration.limit_limit_gtc.limit_price * txinfo.order_configuration.limit_limit_gtc.base_size
-            : txinfo.filled_value,
+          type === 'market'
+            ? txinfo.filled_value
+            : txinfo.order_configuration.limit_limit_gtc.limit_price * txinfo.order_configuration.limit_limit_gtc.base_size
         ),
         fees: Number(txinfo.total_fees),
         txid: txinfo.order_id,
@@ -331,6 +339,7 @@ export default class CoinbaseClient extends ClientBase {
         pair: txinfo.product_id.replace('-', '/').toLowerCase(),
       });
     } catch (e) {
+      App.error(`Error while processing ${orderId}`, false);
       console.log(txinfo);
       App.log('--');
       App.rethrow(e);

@@ -226,7 +226,7 @@ export default class KrakenBot extends ClientBase {
     };
     if (this.pendingRequests.has(txid)) {
       return this.pendingRequests.get(txid);
-      }
+    }
 
     App.log(greenBright`Downloading ${this.id} order ${yellowBright`${txid}`}`, true);
     var promise = this.queryPrivate(data, false, true).then((response) => {

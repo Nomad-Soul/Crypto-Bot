@@ -1,4 +1,4 @@
-import { yellowBright, cyanBright, redBright, greenBright } from 'ansis';
+import { yellowBright, cyanBright, redBright, greenBright, magentaBright } from 'ansis';
 import App from './app.js';
 import fs from 'fs';
 import EcaOrder from './data/eca-order.js';
@@ -129,8 +129,19 @@ export default class CryptoBot {
    */
   getClient(accountId) {
     var accountClient = this.#clients[accountId];
-    if (typeof accountClient === 'undefined') App.error(`Unknown account ${accountId}`);
+    if (typeof accountClient === 'undefined') App.warning(`Unknown account ${accountId}`);
     return accountClient;
+  }
+
+  /**
+   * @param {string} accountId 
+   * @returns {boolean}
+   */
+  hasActiveClient(accountId) {
+    var accountClient = this.#clients[accountId];
+    if (typeof accountClient === 'undefined' || !accountClient.active) 
+      return false;
+    else return true;
   }
 
   /**
@@ -165,6 +176,7 @@ export default class CryptoBot {
 
   getPrice(pair) {
     let price = this.#priceData.get(pair);
+
     if (typeof price === 'undefined') {
       let message = `Price for ${pair} not found`;
       App.printObject(this.#priceData);
@@ -196,14 +208,19 @@ export default class CryptoBot {
         pairMap.set(botSettings.account, []);
       }
       let accountClient = this.getClient(botSettings.account);
-      pairMap.get(botSettings.account).push(accountClient.getPairId(botSettings));
+      if (typeof(accountClient) !== 'undefined') {
+        pairMap.get(botSettings.account).push(accountClient.getPairId(botSettings));
+      }
     });
 
     var promises = [];
 
     [...pairMap.entries()].forEach(([key, tickers]) => {
-      var promise = this.#clients[key].requestTickers(tickers).then((response) => this.updateTickers(response));
-      promises.push(promise);
+      var client = this.#clients[key];
+      if (typeof(client) !== 'undefined' && client.active) {
+        var promise = client.requestTickers(tickers).then((response) => this.updateTickers(response));
+        promises.push(promise);
+      }
     });
 
     return Promise.allSettled(promises);
@@ -235,9 +252,9 @@ export default class CryptoBot {
     var missingOrders = new Map();
     Object.keys(this.#clients).forEach((account) => missingOrders.set(account, []));
     var filtered = data
-      .filter((order) => order.status === 'executed' && !this.getClient(order.account).hasLocalExchangeOrder(order.txid))
+      .filter((order) => order.status === 'executed' && this.hasActiveClient(order.account) && !this.getClient(order.account).hasLocalExchangeOrder(order.txid))
       .forEach((order) => {
-        missingOrders.get(order.account).push(order.txid);
+        missingOrders.get(order.account).push(order.txid ?? order.id);
         if (!order.txid)
           App.warning(`Order ${order.id} contains empty txid`);
       });
@@ -428,7 +445,11 @@ export default class CryptoBot {
     for (let i = 0; i < pendingPlannedOrders.length; i++) {
       let plannedOrder = pendingPlannedOrders[i];
 
-      let accountClient = this.getClient(plannedOrder.account);
+      let accountClient;
+      if (this.hasActiveClient(plannedOrder.account)) {
+        accountClient = this.getClient(plannedOrder.account);
+      }
+      else continue;
       let botSettings = this.getBotSettings(plannedOrder.botId);
       let exchangeOrder = await accountClient.getExchangeOrder(plannedOrder.txid);
       let check = await accountClient.checkPendingOrder(plannedOrder, exchangeOrder);
@@ -480,8 +501,8 @@ export default class CryptoBot {
     var order = this.getPlannedOrder(action.order.id);
     if (typeof order === 'undefined') throw new Error(`Cannot find order in ${action.command}`);
     var accountClient = this.getClient(order.account);
-
     response = await accountClient.processAction(action);
+
     if (typeof response === 'undefined') throw new Error(redBright`No response!`);
 
     switch (action.command) {
@@ -491,21 +512,27 @@ export default class CryptoBot {
           return;
         }
 
-        order.txid = accountClient.getTxidFromResponse(response);
-        let promise = accountClient.updatePlannedOrder(order).then((txinfo) => {
-          if (typeof txinfo === 'undefined') {
-            this.telegramBot.log(`Unexpected error when updating ${order.id}`);
-            return;
-          } else {
-            this.telegramBot.log(
-              `[${order.id}] submitted ${order.type} order ${order.direction} at ${txinfo.price} (${txinfo.cost.toFixed(2)} €) on ${order.account}`,
-            );
+        App.warning('Process Action');
 
-            if (txinfo.status === 'open') accountClient.requestOrdersByStatus('open');
-            this.updatePlanSchedule();
-            return txinfo;
-          }
-        });
+        order.txid = accountClient.getTxidFromResponse(response);
+        App.warning('Waiting 500 ms');
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        let promise = new Promise((resolve) => resolve(accountClient.updatePlannedOrder(order)))
+          .then((txinfo) => {
+            if (typeof txinfo === 'undefined') {
+              this.telegramBot.log(`Unexpected error when updating ${order.id}`);
+              return;
+            } else {
+              this.telegramBot.log(
+                `[${order.id}] submitted ${order.type} order ${order.direction} at ${txinfo.price} (${txinfo.cost.toFixed(2)} €) on ${order.account}`,
+              );
+
+              if (txinfo.status === 'open') accountClient.requestOrdersByStatus('open');
+              this.updatePlanSchedule();
+              return txinfo;
+            }
+          });
 
         return promise;
       }

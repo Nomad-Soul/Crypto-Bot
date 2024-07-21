@@ -23,9 +23,12 @@ server.use(express.json());
 server.use('/css', express.static(path.join(__dirname, '../node_modules/bootswatch/dist/darkly')));
 
 App.server = server.listen(port, () => {
-  App.log(magentaBright`Crypto-Bot listening on port ${port.toString()}`, true);
-
-  update();
+  
+  (async () => {
+    var result = await update();
+    App.log(magentaBright`Crypto-Bot listening on port ${port.toString()}`, true);
+  })();
+  
 });
 
 server.get('/api', async function (req, res) {
@@ -82,8 +85,8 @@ server.get('/api', async function (req, res) {
       var th = new TradeHistory(bot, botId);
 
       if (botSettings.strategyType === 'eca-trader') {
-        //await th.analyseOrders(bot.getClient('krakenBot'), botId, 
-        //  { verbose: true, redownload: false, saveTrades: false, saveDeals:false });
+        // await th.analyseOrders(bot.getClient('krakenBot'), botId, 
+        //   { verbose: true, redownload: true, saveTrades: true, saveDeals:false });
         response = { status: 'success', request: endpoint, data: th.calculatePnL(groupBy), chartType: 'traderBot', pair: bot.getBotSettings(botId).pair };
       } else response = { status: 'failed' };
       break;
@@ -93,7 +96,6 @@ server.get('/api', async function (req, res) {
       let botId = req.query['botId'].toString();
       let purchases = new TradeHistory(bot, botId).reportPurchases(bot.getClient('kraken'));
       let pair = bot.getBotSettings(botId).pair;
-      //console.log(purchases);
       let data = await bot.getClient('kraken').requestCandleData({ pair: pair, interval: req.query['interval'], since: Number(req.query['startDate']) / 1000 });
       response = { status: 'success', pair: pair, request: endpoint, data: data, purchases: purchases, chartType: 'candlestick' };
       break;

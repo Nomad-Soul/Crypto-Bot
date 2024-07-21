@@ -194,7 +194,7 @@ export default class TradeHistory {
     /**
      *
      * @param {TradeData} trade
-     * @returns
+     * @returns {string}
      */
     function groupByWeek(trade) {
       var closeDate = new Date(trade.closeDate);
@@ -204,10 +204,22 @@ export default class TradeHistory {
       return label;
     }
 
+    
     /**
      *
      * @param {TradeData} trade
-     * @returns
+     * @returns {string}
+     */
+    function groupByYear(trade) {
+      var closeDate = new Date(trade.closeDate);
+      var weekYear = Utils.getWeekYear(closeDate);
+      return weekYear.toString();
+    }
+
+    /**
+     *
+     * @param {TradeData} trade
+     * @returns {string}
      */
     function groupByMonth(trade) {
       var closeDate = new Date(trade.closeDate);
@@ -229,6 +241,10 @@ export default class TradeHistory {
         groupByFunction = groupByMonth;
         fillFunction = this.#fillMissingMonths;
         break;
+
+      case 'year':
+        groupByFunction = groupByYear;
+        fillFunction = this.#fillMissingYears;
     }
 
     for (let i = 0; i < data.length; i++) {
@@ -238,9 +254,22 @@ export default class TradeHistory {
       var currentValue = dataset.get(label).pnl;
       dataset.set(label, { pnl: currentValue + trade.proceeds - trade.costBasis, reliable: trade.reliable });
     }
-    // console.log(dataset);
 
     return fillFunction(dataset);
+  }
+
+  /**
+   * We do not consider the case that we might not trade for an entire year.
+   * Just return the converted array
+   * @param {Map<string, TradeData>} dataset 
+   */
+  #fillMissingYears(dataset) {
+    var items = [];
+
+    dataset.forEach((value, key) => {
+      items.push([key, value]);
+    });
+    return items;
   }
 
   /**

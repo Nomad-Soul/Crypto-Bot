@@ -101,20 +101,27 @@ export default class EcaStacker extends Strategy {
   checkStatus(plannedOrders) {
     var requiresNewPlannedOrder = true;
     let hoursElapsed;
+    let invalidHoursElapsed = false;
     if (typeof this.lastOrder === 'undefined') {
       hoursElapsed = this.botSettings.options.frequency;
       this.logStatus('This is the first plan');
     } else if (this.lastOrder.status === 'executed') {
       hoursElapsed = this.lastOrder.hoursElapsed(this.dateNow);
+      invalidHoursElapsed = this.lastOrder.closeDate.getFullYear() === 1970;
+    }
+    else if (this.lastOrder.status === 'planned') {
+      hoursElapsed = this.lastOrder.hoursElapsed(this.dateNow, false);
+      invalidHoursElapsed = this.lastOrder.openDate.getFullYear() === 1970;
+    }
+
+    if (invalidHoursElapsed || isNaN(hoursElapsed)) {
+      requiresNewPlannedOrder = false;
+      App.printObject(this.lastOrder);
+      App.error(`${this.botId}: invalid hours elapsed: ${hoursElapsed}`);
+    } else
       this.logStatus(
         `${yellowBright`${Utils.timeToHoursOrDaysText(hoursElapsed)}`} have elapsed since last ${cyanBright`${this.pairData.base}`} order [${cyanBright`${this.lastOrder.id}`}]`,
       );
-    }
-
-    if (isNaN(hoursElapsed)) {
-      requiresNewPlannedOrder = false;
-      App.error(`${this.botId}: invalid hours elapsed: ${hoursElapsed}`);
-    }
 
     if (plannedOrders.every((order) => order.isClosed)) {
       if (this.botSettings.options.type === 'recurring') {
@@ -151,9 +158,11 @@ export default class EcaStacker extends Strategy {
       var orderValid = typeof order != 'undefined';
       if (!orderValid) continue;
 
+
       switch (key) {
         case 'submitPlannedBuyOrder':
         case 'requiresNewPlannedOrder':
+
           break;
 
         case 'replacePendingOrder':

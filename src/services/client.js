@@ -1,6 +1,6 @@
 import App from '../app.js';
 import fs from 'fs';
-import { cyanBright, greenBright, yellowBright } from 'ansis';
+import { cyanBright, greenBright, magentaBright, yellowBright } from 'ansis';
 import BotSettings from '../data/bot-settings.js';
 import EcaOrder from '../data/eca-order.js';
 import ExchangeOrder from '../data/exchange-order.js';
@@ -28,6 +28,11 @@ export default class ClientBase {
   pendingRequests = new Map();
 
   /**
+   * @type {boolean}
+   */
+  active;
+
+  /**
    *
    * @param {import('../types.js').AccountSettings} accountSettings
    */
@@ -43,6 +48,7 @@ export default class ClientBase {
     this.takerFees = accountSettings.takerFees;
     this.type = accountSettings.type;
     this.watchBalance = accountSettings.watchBalance;
+    this.active = accountSettings.active;
 
     if (!fs.existsSync(`${App.DataPath}/${this.id}/`)) {
       App.log(greenBright`Created data path for ${this.id}`);
@@ -175,7 +181,7 @@ export default class ClientBase {
     if (!this.orders.has(id) || this.orders.get(id).status != order.status) {
       this.orders.set(id, order);
       this.updateLocalOrders = true;
-    }
+    }  
   }
 
   /**
@@ -202,18 +208,32 @@ export default class ClientBase {
       App.warning(`Requesting [${orderId}]`);
       order = await this.queryOrder(orderId);
     }
-    if (typeof(order.descr)==='undefined')
+
+    if (typeof(order) !=='undefined' && (Array.isArray(order) || typeof(order[orderId])!== 'undefined') ) {
+      App.warning('Object format');
+      App.printObject(order);
       order = order[orderId];
+      
+    }
 
     if (typeof order === 'undefined') {
       let errorMsg = `Cannot find ${this.id} order ${orderId}`;
       App.printObject(order);
       App.warning(errorMsg);
-      return undefined;
-    } else {
-      this.setExchangeOrder(orderId, order);
-      return this.convertResponseToExchangeOrder(order, orderId);
+      //App.error(errorMsg);
+      // App.warning('Waiting...');
+      // await new Promise(r => setTimeout(r, 2000));
+      // order = await this.queryOrder(orderId);
+      // if (typeof order === 'undefined')
+      //   App.error('Order still not found');
+      // else 
+      // {App.log('Order found after one attempt');}
+      return null;
     }
+    else {
+      this.setExchangeOrder(orderId, order);
+      return this.convertResponseToExchangeOrder(order, orderId);}
+    
   }
 
   /**
@@ -326,7 +346,7 @@ export default class ClientBase {
    * @returns
    */
   async updatePlannedOrder(plannedOrder) {
-    var txinfo = await this.getExchangeOrder(plannedOrder.txid);
+    var txinfo = await this.getExchangeOrder(plannedOrder.txid, true);
 
     if (typeof txinfo === 'undefined') {
       App.printObject(plannedOrder);
