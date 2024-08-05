@@ -13,6 +13,8 @@ export default class BotSettings {
   /** @type {string} */
   base;
   /** @type {string} */
+  alternateBase;
+  /** @type {string} */
   quote;
   /** @type {string} */
   pair;
@@ -32,6 +34,7 @@ export default class BotSettings {
       this.account = data.account;
       this.strategyType = data.strategy;
       this.base = data.base;
+      this.alternateBase = data.alternateBase;
       this.active = data.active ?? false;
       this.maxBaseDigits = data.maxBaseDigits;
       this.maxQuoteDigits = data.maxQuoteDigits;

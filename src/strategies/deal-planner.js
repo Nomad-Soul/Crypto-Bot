@@ -205,14 +205,24 @@ export default class DealPlanner {
     if (dealData === null) dealData = deal.calculateProfitTarget(this.#bot, this.botSettings);
 
     const { averagePrice, costBasis, targetPrice: targetPrice } = dealData;
+    var currentPrice = this.#bot.getPrice(this.botSettings.pair);
+    var sellPrice = targetPrice;
+     
+    sellPrice = currentPrice > sellPrice ? currentPrice : sellPrice;
+    sellPrice = Number(sellPrice.toFixed(this.pairData.maxQuoteDigits));
 
     var accountClient = this.#bot.getClient(this.botSettings.account);
     var volume = accountClient.getBalance(this.botSettings.base);
-    var volumeQuote = volume * targetPrice;
-    var pnl = (targetPrice - averagePrice) * volume;
+    if (volume === 0)
+      volume = accountClient.getBalance(this.botSettings.alternateBase);
+    if (volume === 0)
+      App.error(`Cannot plan take profit order: no volume for ${deal.id}`);
+
+    var volumeQuote = volume * sellPrice;
+    var pnl = (sellPrice - averagePrice) * volume;
 
     App.log(
-      `[${cyanBright`${deal.id}`}]: Proposing sell at ${yellowBright`${targetPrice.toFixed(this.pairData.maxQuoteDigits)}`} Volume: ${yellowBright`${volume.toFixed(this.pairData.maxBaseDigits)}`}`,
+      `[${cyanBright`${deal.id}`}]: Proposing sell at ${yellowBright`${sellPrice.toFixed(this.pairData.maxQuoteDigits)}`} Volume: ${yellowBright`${volume.toFixed(this.pairData.maxBaseDigits)}`}`,
     );
     var colour = pnl > 0 ? greenBright : redBright;
     App.log(
@@ -226,8 +236,8 @@ export default class DealPlanner {
       direction: 'sell',
       status: 'planned',
       openDate: Date.now(),
-      price: Number(targetPrice.toFixed(this.pairData.maxQuoteDigits)),
-      volume: volume,
+      price: sellPrice,
+      volume: volume.toFixed(this.pairData.maxBaseDigits),
       volumeQuote: Number(volumeQuote.toFixed(this.pairData.maxQuoteDigits)),
       fees: Number((this.makerFee * volumeQuote).toFixed(this.pairData.maxQuoteDigits)),
       account: this.botSettings.account,

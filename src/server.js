@@ -85,8 +85,8 @@ server.get('/api', async function (req, res) {
       var th = new TradeHistory(bot, botId);
 
       if (botSettings.strategyType === 'eca-trader') {
-        // await th.analyseOrders(bot.getClient('krakenBot'), botId, 
-        //   { verbose: true, redownload: true, saveTrades: true, saveDeals:false });
+        await th.analyseOrders(bot.getClient('krakenBot'), botId, 
+          { verbose: true, redownload: true, saveTrades: true, saveDeals:false });
         response = { status: 'success', request: endpoint, data: th.calculatePnL(groupBy), chartType: 'traderBot', pair: bot.getBotSettings(botId).pair };
       } else response = { status: 'failed' };
       break;

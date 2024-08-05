@@ -274,9 +274,17 @@ export default class EcaTrader extends Strategy {
     var requiresTakeProfitOrder = true;
     var takeProfitOrder = this.dealPlanner.proposeTakeProfitOrder(deal, dealData);
     var availableBalance = this.accountClient.getBalance(this.botSettings.base.toLowerCase());
-    if (takeProfitOrder.volume < availableBalance) {
+    if (availableBalance === 0) {
+      availableBalance = this.accountClient.getBalance(this.botSettings.alternateBase.toLowerCase());
+    }
+    var tol=Math.pow(10, -this.pairData.maxBaseDigits);
+    if (Math.abs(takeProfitOrder.volume - availableBalance) <= tol) {
+      takeProfitOrder.volume -= tol;
+    }
+    else if (takeProfitOrder.volume < availableBalance) {
       takeProfitOrder.volume = availableBalance;
     }
+
     if (takeProfitOrder.price < this.currentPrice) {
       takeProfitOrder.price = this.currentPrice;
     }

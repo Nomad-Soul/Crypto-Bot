@@ -123,7 +123,6 @@ export default class ClientBase {
   /**
    *
    * @param {string} currency
-   * @returns {Number}
    */
   getBalance(currency) {
     return this.balances.get(currency);

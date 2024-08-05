@@ -148,13 +148,22 @@ export default class Strategy {
     return balanceCheck;
   }
 
+  /**
+   * @param {number} volume
+   */
   volumeCheck(volume) {
-    var availableBalance = this.accountClient.getBalance(this.pairData.base);
+    var availableBalance = this.accountClient.getBalance(this.botSettings.base);
+    if (availableBalance === 0) {
+      availableBalance = this.accountClient.getBalance(this.botSettings.alternateBase);
+    }
+
     var volumeCheck = availableBalance >= volume;
+    
     var colour = volumeCheck ? greenBright : redBright;
     this.logStatus(
       `${this.pairData.id}: Requested ${yellowBright`${volume.toFixed(this.pairData.maxBaseDigits)}`} Available: ${colour`${availableBalance.toFixed(this.pairData.maxBaseDigits)} ${this.pairData.base}`}`,
     );
+    App.warning(`${volume} - ${availableBalance} : ${ availableBalance >= volume}`);
     return volumeCheck;
   }
 

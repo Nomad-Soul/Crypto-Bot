@@ -40,6 +40,7 @@ export default class KrakenBot extends ClientBase {
     if (typeof jsonData !== 'undefined' && jsonData.data.error.length > 0) {
       App.printObject(jsonData.data);
       App.error(jsonData.data.error);
+      App.error(inputParameters,false);
     }
     return jsonData.data.result;
   }

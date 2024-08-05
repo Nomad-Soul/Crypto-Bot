@@ -42,10 +42,10 @@ export default class CryptoBot {
       switch (accountSettings.type.toLowerCase()) {
         case 'kraken':
           if (accountSettings.active) this.#clients[accountId] = new KrakenClient(accountSettings);
-          if (!this.ccxtClient && accountId === 'krakenBot') {
-            this.ccxtClient = new ExchangeClient(accountSettings);
-            //this.ccxtClient.test();
-          }
+          // if (!this.ccxtClient && accountId === 'krakenBot') {
+          //   this.ccxtClient = new ExchangeClient(accountSettings);
+          //   //this.ccxtClient.test();
+          // }
           break;
 
         case 'coinbase':
