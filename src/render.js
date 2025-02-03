@@ -359,11 +359,27 @@ export default class Renderer {
     var botSettings = this.#bot.getBotSettings(openDeal.botId);
     var pairData = accountClient.getPairData(botSettings.pair);
 
-    let orders = openDeal.orders.map((id) => this.#bot.getPlannedOrder(id));
+    const notNil = (i) => !(typeof i === 'undefined' || i === null);
+    
+    
+    let orders = openDeal.orders
+      .map((id) => this.#bot.getPlannedOrder(id));
+    if (orders.some(o => notNil)) {
+      App.printObject(orders);
+      App.error('Null orders found!', false);
+      return {
+        html: `<div class="bg-dark-container p-md-4 p-2"><div class="row">
+    <h5 class="text-start">Deal contains non-existing orders.</h5>
+  </div></div>`,
+      };
+    }
+      
     let closedOrders = orders
       .filter((order) => order.isClosed)
       .sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime())
       .map((order) => this.#bot.getLocalExchangeOrderFromPlannedOrderId(order.id, openDeal.account));
+
+    
     let nextBuyOrder =
       orders.find((order) => !order.isClosed && order.direction === 'buy') ??
       dealPlanner.calculateSafetyOrder(openDeal);
@@ -371,12 +387,15 @@ export default class Renderer {
       ? this.#bot.getPlannedOrder(openDeal.sellOrders[0])
       : dealPlanner.proposeTakeProfitOrder(openDeal);
 
-    let safetyOrderPrice = nextBuyOrder.price;
     let takeProfitPrice = takeProfitOrder.price;
+
+    let safetyOrderPrice = nextBuyOrder.price;
+    let deltaSafety = (takeProfitPrice - safetyOrderPrice) / 2;
+    
     const { averagePrice, costBasis, profitTarget } = openDeal.calculateProfitTarget(this.#bot, botSettings);
     let currentPrice = this.#bot.getPrice(nextBuyOrder.pair);
 
-    let deltaSafety = (takeProfitPrice - safetyOrderPrice) / 2;
+    
     let widthPnL =
       currentPrice > averagePrice
         ? (50 * (currentPrice - averagePrice)) / (takeProfitPrice - averagePrice)

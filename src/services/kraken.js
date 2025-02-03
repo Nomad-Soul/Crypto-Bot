@@ -40,7 +40,6 @@ export default class KrakenBot extends ClientBase {
     if (typeof jsonData !== 'undefined' && jsonData.data.error.length > 0) {
       App.printObject(jsonData.data);
       App.error(jsonData.data.error);
-      App.error(inputParameters,false);
     }
     return jsonData.data.result;
   }
@@ -227,7 +226,7 @@ export default class KrakenBot extends ClientBase {
     };
     if (this.pendingRequests.has(txid)) {
       return this.pendingRequests.get(txid);
-    }
+      }
 
     App.log(greenBright`Downloading ${this.id} order ${yellowBright`${txid}`}`, true);
     var promise = this.queryPrivate(data, false, true).then((response) => {
@@ -251,7 +250,8 @@ export default class KrakenBot extends ClientBase {
    * @param {string[]} txidArray
    */
   async requestOrdersByTxid(txidArray) {
-    var txidString = txidArray.join(',');
+
+    var txidString = txidArray.slice(0,50).join(',');
     var data = {
       endpoint: 'QueryOrders',
       txid: txidString,

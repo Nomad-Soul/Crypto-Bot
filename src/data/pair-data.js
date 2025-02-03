@@ -28,6 +28,7 @@ export default class PairData {
     ['LINK-EUR', 'link/eur'],
     ['DOT-EUR', 'dot/eur'],
     ['ADA-EUR', 'ada/eur'],
+    ['LTC-EUR', 'ltc/eur']
   ]);
 
   constructor(data) {

@@ -102,9 +102,11 @@ export default class EcaStacker extends Strategy {
     var requiresNewPlannedOrder = true;
     let hoursElapsed;
     let invalidHoursElapsed = false;
+    let firstOrder = false;
     if (typeof this.lastOrder === 'undefined') {
       hoursElapsed = this.botSettings.options.frequency;
       this.logStatus('This is the first plan');
+      firstOrder = true;
     } else if (this.lastOrder.status === 'executed') {
       hoursElapsed = this.lastOrder.hoursElapsed(this.dateNow);
       invalidHoursElapsed = this.lastOrder.closeDate.getFullYear() === 1970;
@@ -119,10 +121,12 @@ export default class EcaStacker extends Strategy {
       App.printObject(this.lastOrder);
       App.error(`${this.botId}: invalid hours elapsed: ${hoursElapsed}`);
     } else
+    {      if (!firstOrder)
       this.logStatus(
         `${yellowBright`${Utils.timeToHoursOrDaysText(hoursElapsed)}`} have elapsed since last ${cyanBright`${this.pairData.base}`} order [${cyanBright`${this.lastOrder.id}`}]`,
       );
-
+    }
+    
     if (plannedOrders.every((order) => order.isClosed)) {
       if (this.botSettings.options.type === 'recurring') {
         let ordersToday = this.bot
