@@ -21,14 +21,11 @@ export default class PairData {
     ['xdgeur', 'doge/eur'],
     ['neareur', 'near/eur'],
     ['maticeur', 'matic/eur'],
-    ['SOL-EUR', 'sol/eur'],
-    ['AVAX-EUR', 'avax/eur'],
-    ['ETH-EUR', 'eth/eur'],
-    ['DOGE-EUR', 'doge/eur'],
-    ['LINK-EUR', 'link/eur'],
-    ['DOT-EUR', 'dot/eur'],
-    ['ADA-EUR', 'ada/eur'],
-    ['LTC-EUR', 'ltc/eur']
+    ['soleur', 'sol/eur'],
+    ['adaeur', 'ada/eur'],
+    ['doteur', 'dot/eur'],
+    ['nanoeth', 'nano/eth'],
+    ['ltceur', 'ltc/eur'],
   ]);
 
   constructor(data) {
@@ -45,10 +42,7 @@ export default class PairData {
 
   static Get(pair) {
     if (!PairData.Has(pair)) {
-      App.warning(`Invalid pair: ${pair}`);
-      var e = new Error();
-      console.log(e.stack);
-      return 'undefined';
+      return pair;
     }
 
     return PairData.alias.get(pair);

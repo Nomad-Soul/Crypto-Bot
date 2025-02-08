@@ -79,11 +79,12 @@ export default class EcaStacker extends Strategy {
       } else {
         this.logStatus(`Unexpected branch for ${this.botId}`, 'warning');
         App.printObject(plannedOrder);
+        App.printObject(exchangeOrder);
+        throw new Error();
       }
     }
 
-    if (this.botId === 'sol/eur')
-      this.balanceCheck();
+    if (this.botId === 'sol/eur') this.balanceCheck();
     this.checkStatus(plannedOrders);
     this.checkDealFlags();
 
@@ -110,8 +111,7 @@ export default class EcaStacker extends Strategy {
     } else if (this.lastOrder.status === 'executed') {
       hoursElapsed = this.lastOrder.hoursElapsed(this.dateNow);
       invalidHoursElapsed = this.lastOrder.closeDate.getFullYear() === 1970;
-    }
-    else if (this.lastOrder.status === 'planned') {
+    } else if (this.lastOrder.status === 'planned') {
       hoursElapsed = this.lastOrder.hoursElapsed(this.dateNow, false);
       invalidHoursElapsed = this.lastOrder.openDate.getFullYear() === 1970;
     }
@@ -120,13 +120,13 @@ export default class EcaStacker extends Strategy {
       requiresNewPlannedOrder = false;
       App.printObject(this.lastOrder);
       App.error(`${this.botId}: invalid hours elapsed: ${hoursElapsed}`);
-    } else
-    {      if (!firstOrder)
-      this.logStatus(
-        `${yellowBright`${Utils.timeToHoursOrDaysText(hoursElapsed)}`} have elapsed since last ${cyanBright`${this.pairData.base}`} order [${cyanBright`${this.lastOrder.id}`}]`,
-      );
+    } else {
+      if (!firstOrder)
+        this.logStatus(
+          `${yellowBright`${Utils.timeToHoursOrDaysText(hoursElapsed)}`} have elapsed since last ${cyanBright`${this.pairData.base}`} order [${cyanBright`${this.lastOrder.id}`}]`,
+        );
     }
-    
+
     if (plannedOrders.every((order) => order.isClosed)) {
       if (this.botSettings.options.type === 'recurring') {
         let ordersToday = this.bot
@@ -162,11 +162,9 @@ export default class EcaStacker extends Strategy {
       var orderValid = typeof order != 'undefined';
       if (!orderValid) continue;
 
-
       switch (key) {
         case 'submitPlannedBuyOrder':
         case 'requiresNewPlannedOrder':
-
           break;
 
         case 'replacePendingOrder':
@@ -175,7 +173,6 @@ export default class EcaStacker extends Strategy {
 
         default:
           App.warning(`Unrecognised flag: ${key}`);
-
           continue;
       }
 
@@ -325,5 +322,38 @@ export default class EcaStacker extends Strategy {
 
     order.volumeQuote = order.volume * currentPrice;
     return Action.LimitAction(order, this.pairData);
+  }
+
+  rebuildHistory(tolerance = 0.5) {
+    var accountClient = this.bot.getClient(this.botSettings.account);
+    App.log(`Rebuilding history for <${cyanBright`${this.botId}`}>: ${accountClient.orders.size} orders to parse.`);
+
+    var volumeQuote = this.botSettings.maxVolumeQuote;
+    var lowerLimit = volumeQuote - tolerance * volumeQuote;
+    var upperLimit = volumeQuote + tolerance * volumeQuote;
+    App.log(`Search range: ${lowerLimit}-${upperLimit} ${this.botSettings.quote}`);
+
+    var orders = [];
+    var leftOutOrders = [];
+
+    accountClient.orders.forEach((order) => {
+      if (order.pair !== this.botSettings.pair) return;
+      if (order.cost >= lowerLimit && order.cost <= upperLimit) orders.push(order);
+      else {
+        let txid = order.txid;
+        let cost = order.cost;
+        leftOutOrders.push({ txid: cost });
+      }
+    });
+
+    App.log(`Qualifying orders: ${cyanBright`${orders.length.toString()}`}`);
+    App.log(`Left out orders  : ${redBright`${leftOutOrders.length.toString()}`}`);
+
+    App.printObject(leftOutOrders);
+
+    var result = Object.groupBy(orders, ({ status }) => EcaOrder.StatusFromExchangeOrder(status));
+    Object.entries(result).forEach(([k, array]) => (result[k] = array.map((order) => order.txid)));
+    let filename = this.botId.replace('/', '-');
+    App.writeFile(`${App.DataPath}/${accountClient.type}/stacker-${filename}`, result);
   }
 }

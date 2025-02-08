@@ -1,4 +1,5 @@
 import App from '../app.js';
+import fs from 'fs';
 import Utils from '../utils.js';
 import Action from '../data/action.js';
 import { yellowBright, cyanBright, redBright, greenBright, magentaBright } from 'ansis';
@@ -456,8 +457,18 @@ export default class EcaTrader extends Strategy {
   loadDeals() {
     App.log(greenBright`Loading ${this.botSettings.id}-deals`);
     const file = `${App.DataPath}/${this.botSettings.account}/${this.botSettings.account}-deals.json`;
-    var data = App.readFileSync(file);
-    this.deals = new Map(Object.keys(data).map((key) => [key, new TraderDeal(data[key])]));
+    try {
+      if (fs.existsSync(file)) {
+        var data = App.readFileSync(file);
+        this.deals = new Map(Object.keys(data).map((key) => [key, new TraderDeal(data[key])]));
+      }
+      else
+        App.warning(`File <${file}> does not exist`);
+    }
+    catch(ex) {
+      App.error(file, false);
+      App.rethrow(ex);
+    }
   }
 
   async recoverDeal() {

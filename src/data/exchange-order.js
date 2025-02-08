@@ -1,4 +1,7 @@
+import App from '../app.js';
+
 export default class ExchangeOrder {
+  static CurrentVersion = '1.0';
   /** @type {string} */
   type;
   /** @type {string} */
@@ -23,13 +26,16 @@ export default class ExchangeOrder {
   fees;
   /** @type {Number} */
   cost;
+  /** @type {string} */
+  version;
+  /** @type {string} */
+  original;
 
   constructor(data) {
     this.type = data.type;
     this.status = data.status;
     this.side = data.side;
-    this.openDate = data.openDate;
-    this.closeDate = data.closeDate;
+    this.openDate = new Date(data.openDate);
     this.volume = data.volume;
     this.price = data.price;
     this.txid = data.txid;
@@ -37,6 +43,17 @@ export default class ExchangeOrder {
     this.fees = data.fees;
     this.cost = data.cost;
     this.pair = data.pair;
+    this.original = data.original;
+
+    if (data.closeDate)
+      this.closeDate = new Date(data.closeDate);
+    else if (this.type === 'market') {
+      this.closeDate = new Date(data.openDate);
+    } else {
+      App.warning(`Order ${this.txid} does not have a closing time`);
+      App.printObject(data);
+      App.error();
+    }
   }
 
   get isOpen() {

@@ -35,14 +35,14 @@ async function init() {
       if (accountData.tradeBalance) {
         receiveData('TradeBalance', 'tradeHistory', { target: 'api', botId: accountData.tradeBalance[0].botId, groupBy: accountData.tradeBalance[0].groupBy });
       }
-      if (accountData.purchaseHistory) {
-        receiveData('PurchaseHistory', 'stats', {
-          target: 'api',
-          botId: accountData.purchaseHistory[0].botId,
-          interval: accountData.purchaseHistory[0].interval,
-          startDate: new Date(accountData.purchaseHistory[0].startDate).getTime(),
-        });
-      }
+      // if (accountData.purchaseHistory) {
+      //   receiveData('PurchaseHistory', 'stats', {
+      //     target: 'api',
+      //     botId: accountData.purchaseHistory[0].botId,
+      //     interval: accountData.purchaseHistory[0].interval,
+      //     startDate: new Date(accountData.purchaseHistory[0].startDate).getTime(),
+      //   });
+      // }
     });
   });
   receiveData('ShowSchedule', 'plannedOrders', { target: 'api' });

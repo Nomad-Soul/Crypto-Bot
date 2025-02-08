@@ -226,7 +226,7 @@ export default class KrakenBot extends ClientBase {
     };
     if (this.pendingRequests.has(txid)) {
       return this.pendingRequests.get(txid);
-      }
+    }
 
     App.log(greenBright`Downloading ${this.id} order ${yellowBright`${txid}`}`, true);
     var promise = this.queryPrivate(data, false, true).then((response) => {
@@ -268,7 +268,7 @@ export default class KrakenBot extends ClientBase {
       try {
         Object.entries(response).forEach(([txid, order]) => {
           order.txid = txid;
-          this.setExchangeOrder(txid, order);
+          this.setExchangeOrder(txid, KrakenBot.ConvertToExchangeOrder(order, txid));
         });
         return response;
       } catch (e) {
@@ -366,7 +366,15 @@ export default class KrakenBot extends ClientBase {
   archiveOrdersByYear(year) {
     var data = {};
     [...this.orders.entries()].forEach(([id, o]) => {
-      if (new Date(o.openDate.getTime() * 1000).getFullYear() === year) data[id] = o;
+      try {
+        var orderYear = new Date(o.opentm*1000).getFullYear();
+        if (orderYear === year) data[id] = o;
+        App.log(`Added order: ${id}`);
+      }
+      catch(ex) {
+        App.printObject(o);
+        throw ex;
+      }
     });
     if (data.length === 0) App.warning(`[${this.id}]: No orders found for ${year}`);
     this.saveOrdersToFile(`${this.id}-${year}-orders`, data);
@@ -468,7 +476,7 @@ export default class KrakenBot extends ClientBase {
     let statusOrders = Object.entries(orders);
     App.log(`Received ${cyanBright`${statusOrders.length.toString()}`} ${status} orders from ${this.id} [${statusOrders.length.toString()}] total`);
 
-    statusOrders.forEach(([key, order]) => this.setExchangeOrder(key, order));
+    statusOrders.forEach(([key, order]) => this.setExchangeOrder(key, KrakenBot.ConvertToExchangeOrder(order, key)));
 
     return true;
   }
@@ -597,6 +605,7 @@ export default class KrakenBot extends ClientBase {
       App.rethrow(e);
     }
     return new ExchangeOrder({
+      txid: orderId,
       type: txinfo.descr.ordertype,
       status: KrakenBot.ConvertKrakenStatusToExchangeOrder(txinfo.status, txinfo),
       side: txinfo.descr.type,
@@ -608,6 +617,7 @@ export default class KrakenBot extends ClientBase {
       fees: Number(txinfo.fee),
       userref: txinfo.userref,
       pair: PairData.Get(txinfo.descr.pair.toLowerCase()),
+      original: txinfo
     });
   }
 

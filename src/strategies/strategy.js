@@ -1,5 +1,6 @@
 import { yellowBright, cyanBright, redBright, greenBright } from 'ansis';
 import App from '../app.js';
+import fs from 'fs';
 import CryptoBot from '../crypto-bot.js';
 import BotSettings from '../data/bot-settings.js';
 import EcaOrder from '../data/eca-order.js';
@@ -27,6 +28,8 @@ export default class Strategy {
   /** @type {Map<string, EcaOrder>} */
   #flags = new Map();
 
+  strategyOrders = {};
+
   /**
    *
    * @param {CryptoBot} bot
@@ -42,6 +45,14 @@ export default class Strategy {
     this.botSettings = bot.getBotSettings(botId);
     this.accountClient = this.#bot.getClient(this.botSettings.account);
     this.pairData = this.accountClient.getPairData(this.botSettings.pair);
+
+    let path = `${App.DataPath}/${this.botSettings.account}/${this.botSettings.strategyType.replace('eca-', '')}-${this.botId.replace('/','-')}.json`;
+    if (fs.existsSync(path)) {
+      this.strategyOrders = App.readFileSync(path);
+    }
+    else {
+      this.rebuildHistory();
+    }
   }
 
   get bot() {
@@ -131,13 +142,13 @@ export default class Strategy {
     }
 
     //try {
-      this.logStatus(
-        `Order for ${volumeQuote.toFixed(maxQuoteDigits)} ${this.botSettings.quote} (${(volumeQuote / this.currentPrice).toFixed(this.pairData.maxBaseDigits)} ${this.pairData.base}) ${balanceCheck ? greenBright`can` : redBright`cannot`} be executed at current market price`,
-      );
+    this.logStatus(
+      `Order for ${volumeQuote.toFixed(maxQuoteDigits)} ${this.botSettings.quote} (${(volumeQuote / this.currentPrice).toFixed(this.pairData.maxBaseDigits)} ${this.pairData.base}) ${balanceCheck ? greenBright`can` : redBright`cannot`} be executed at current market price`,
+    );
 
-      this.logStatus(
-        `${this.pairData.id}: ${yellowBright`${this.currentPrice.toFixed(maxQuoteDigits)}`} Available: ${yellowBright`${availableBalance.toFixed(maxQuoteDigits)} ${this.pairData.quote}`}`,
-      );
+    this.logStatus(
+      `${this.pairData.id}: ${yellowBright`${this.currentPrice.toFixed(maxQuoteDigits)}`} Available: ${yellowBright`${availableBalance.toFixed(maxQuoteDigits)} ${this.pairData.quote}`}`,
+    );
     // } catch (e) {
     //   App.warning('Unexpected error in balanceCheck');
     //   console.log(this.pairData);
@@ -160,6 +171,10 @@ export default class Strategy {
   }
 
   decide() {
-    App.error('Not implemented');
+    App.error(`${this.botSettings.strategyType}-${this.botSettings.id}: Not implemented`);
+  }
+
+  rebuildHistory() {
+    App.warning(`${this.botSettings.strategyType}-${this.botSettings.id}: Not implemented`);
   }
 }

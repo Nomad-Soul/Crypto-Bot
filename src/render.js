@@ -20,62 +20,68 @@ export default class Renderer {
     this.#currency = Intl.NumberFormat(App.locale, { style: 'currency', currency: bot.appCurrency });
   }
 
-  reportMissingOrders() {
-    let data = this.#bot.getPlannedOrders('all');
-    var filtered = data
-      .filter((order) => !this.#bot.getClient(order.account).hasLocalExchangeOrder(order.txid))
-      .map((order) => order.txid);
-    return filtered;
-  }
-
   async renderOrderSchedule() {
-    this.reportMissingOrders();
-    let data = this.#bot.getPlannedOrders('all');
+    var bots = this.#bot.getAllBots();
     var html = '';
+    var entries = 0;
+    var data = [];
+    for (let [botId, bot] of Object.entries(bots)) {
+      let botSettings = this.#bot.getBotSettings(botId);
+      let accountClient = this.#bot.getClient(botSettings.account);
 
-    var accountClient;
-    var sortedData = data.sort((a, b) => b.openDate.getTime() - a.openDate.getTime());
-    App.error(`L: ${sortedData.length}`, false);
-    for (let i = 0; i < sortedData.length; i++) {
-      let order = data[i];
-      let botSettings = this.#bot.getBotSettings(order.botId);
-      let price = this.#bot.getPrice(botSettings.pair);
+      if (typeof(bot.strategy) !== 'object')
+        continue;
+      
+      for (let [status, orders] of Object.entries(bot.strategy.strategyOrders)) {
+        for (let orderTxid of orders) {
+          let order = accountClient.getLocalOrder(orderTxid);
+          data.push(new EcaOrder({
+            botId: botId,
+            account: accountClient.id,
+            strategy: 'eca-stacker',
+          }, order));
+        }
+      }
+    }
+      
+    data  = data.sort((a, b) => b.order.openDate.getTime() - a.order.openDate.getTime());
+
+    for (let ecaOrder of data) {
+      if (++entries > 100)
+        break;
+      let botSettings = this.#bot.getBotSettings(ecaOrder.botId);
+      let order = ecaOrder.order;
+      let price = order.price;
       let cost = 0;
-      let volume = order.volumeQuote / price;
+      let volume = order.cost / price;
       let date = order.closeDate ?? order.openDate;
       let dateClass = '';
       let costClass = 'text-warning';
       let status = order.status;
       let statusClass = 'text-neutral';
-      let exchangeOrder = {};
-      accountClient = this.#bot.getClient(order.account);
 
-      if (typeof order.txid != 'undefined') {
-        exchangeOrder = await accountClient.getExchangeOrder(order.txid);
-      }
-      if (order.status == 'executed') {
-        if (typeof exchangeOrder != 'undefined') {
-          volume = exchangeOrder.volume;
-          cost = exchangeOrder.cost;
-          if (exchangeOrder.status === 'closed' || exchangeOrder.status === 'FILLED') {
-            costClass = 'text-success';
-            date = exchangeOrder.closeDate;
-          } else {
-            statusClass = 'text-danger';
-            date = exchangeOrder.openDate;
-          }
+      if (order.isClosed) {
+        volume = order.volume;
+        cost = order.cost;
+        if (order.status === 'closed') {
+          costClass = 'text-success';
+          date = order.closeDate;
+        } else {
+          statusClass = 'text-danger';
+          date = order.openDate;
         }
       } else if (order.status === 'pending') {
         statusClass = 'text-info';
-        volume = exchangeOrder.volume;
+        volume = order.volume;
         cost = price * Math.max(volume, botSettings.minVolume);
-        date = exchangeOrder.openDate;
+        date = order.openDate;
       } else if (order.status === 'planned') {
         cost = 0;
         date = new Date(order.openDate);
-        if (order.isScheduledForToday) {
-          statusClass = dateClass = 'text-info';
-        } else statusClass = dateClass = 'text-primary';
+        // if (order.isScheduledForToday) {
+        //   statusClass = dateClass = 'text-info';
+        // } else 
+        statusClass = dateClass = 'text-primary';
       }
 
       // order.openDate = exchangeOrder.openDate;
@@ -86,21 +92,22 @@ export default class Renderer {
 
       //console.log(order);
       try {
-        html += `<div class="row mt-2" data-id="${order.id ?? ''}">
+        html += `<div class="row mt-2" data-id="${order.txid ?? ''}">
         <div class="col-md-1 col-2 text-start"><span class="badge ${botSettings.badgeClass}">${botSettings.base}</span></div>
         <div class="col-md-2 col-5 text-start ${dateClass}" title="${Utils.toShortTime(date)}">${Utils.toShortDate(date)}</div>
-        <div class="col-md-1 col-2 text-start ${statusClass}">${order.direction}</div>
+        <div class="col-md-1 col-2 text-start ${statusClass}">${order.side}</div>
         <div class="col-md-2 col-3 text-end ${costClass}">${Number(volume).toFixed(4)}</div>
         <div class="col-md-2 col-4 text-end order-md-1 order-2 ${costClass}">${cost > 0 ? this.#currency.format(cost) : '-'}</div>
         <div class="col-md-2 col-4 text-start ${statusClass}" title="${order.txid}" >${status}</div>
-        <div class="col-md-2 col-4 text-start text-neutral">${order.account}</div>
+        <div class="col-md-2 col-4 text-start text-neutral">${ecaOrder.account}</div>
     </div>`;
       } catch (e) {
         App.printObject(order);
-        App.printObject(exchangeOrder);
-        App.error(`Invalid data: ${order.id}`);
+        App.error(`Invalid data: ${order.txid}$`, false);
+        App.rethrow(e);          
       }
     }
+
     //this.#bot.updatePlanSchedule();
     return { html: html };
   }

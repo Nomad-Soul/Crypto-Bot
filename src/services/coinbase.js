@@ -100,13 +100,37 @@ export default class CoinbaseClient extends ClientBase {
     const { num, startDate } = options || { num: 100, startDate: new Date('01/01/2024') };
 
     var requestedStatus = CoinbaseClient.ConvertStatusToCoinbase(status);
-    if (requestedStatus === 'FILLED') requestedStatus = 'CANCELLED';
+    //if (requestedStatus === 'FILLED') requestedStatus = 'CANCELLED';
     return this.submitRequest('orders/historical/batch', 'GET', {
       order_status: requestedStatus,
       start_date: startDate.toISOString(),
       limit: num,
     });
   }
+
+  async downloadAllOrders(status='closed') {
+    App.warning(`Downloading all ${status} orders from ${this.id}`);
+    var orderCount = 0;
+  
+    return this.requestOrders(status).then((response) => {
+      var promises = [];
+      promises.push(new Promise((resolve, reject) => (this.updateOrders(response.data.orders, status, true) ? resolve(true) : reject(false))));
+      orderCount = response.data.orders.length - Object.keys(response.data.orders).length;
+      App.warning(`Total orders: ${response.data.orders.length}, ${response.data.orders.length - this.orders.size} missing from ${this.id}`);
+      let requests = Math.ceil(orderCount / 50);
+      for (let i = 1; i <= requests; i++) {
+        App.warning(`Submitting request ${yellowBright`${i.toString()}`} to ${this.id}`);
+  
+        promises.push(
+          this.requestOrders(status, { pagination: 50 * i }).then(
+            (response) => new Promise((resolve, reject) => (this.updateOrders(response.data.orders, status, true) ? resolve(true) : reject(false))),
+          ),
+        );
+      }
+      return Promise.all(promises);
+    });
+  }
+
 
   async requestOrdersByStatus(status, options = undefined) {
     App.log(`${cyanBright`Downloading`} ${this.id} ${status} orders`);
@@ -151,11 +175,32 @@ export default class CoinbaseClient extends ClientBase {
     let statusObject = {};
 
     statusOrders.forEach((order) => {
-      this.setExchangeOrder(order.order_id, order);
+      this.setExchangeOrder(order.order_id, CoinbaseClient.ConvertToExchangeOrder(order));
       statusObject[order.order_id] = order;
     });
 
     return true;
+  }
+
+  archiveOrdersByYear(year) {
+    var data = {};
+    [...this.orders.entries()].forEach(([id, o]) => {
+      try {
+        var orderYear = o.openDate.getFullYear();
+        if (orderYear === year) {
+          data[id] = o.original;
+          App.log(`Added order: ${id}`);
+        }
+      }
+      catch(ex) {
+        App.printObject(o);
+        throw ex;
+      }
+    });
+    if (data.length === 0) App.warning(`[${this.id}]: No orders found for ${year}`);
+
+    App.log(`Processed: ${Object.keys(data).length} orders`);
+    this.saveOrdersToFile(`${this.id}-${year}-orders`, data);
   }
 
   /**
@@ -221,7 +266,8 @@ export default class CoinbaseClient extends ClientBase {
       App.log(`\t${error.code}: ${error.error}`);
       App.log('\t' + error.message);
       App.printObject(error.details, false);
-      throw new Error('Invalid request');
+      if (error.code == 429)
+        App.warning('Rate limit exceeded');
     });
   }
 
@@ -331,6 +377,7 @@ export default class CoinbaseClient extends ClientBase {
         txid: txinfo.order_id,
         userref: txinfo.client_order_id,
         pair: txinfo.product_id.replace('-', '/').toLowerCase(),
+        original: txinfo,
       });
     } catch (e) {
       console.log(txinfo);

@@ -9,14 +9,13 @@ import EcaTrader from './strategies/eca-trader.js';
 import TradeHistory from './strategies/trade-history.js';
 const __dirname = import.meta.dirname;
 
-App.log('Starting Crypto-Bot v1.0 by NomadSoul', true, magentaBright);
+App.log('Starting Crypto-Bot v1.0 by NomadSoul', false, magentaBright);
+var bot = new CryptoBot();
+process.env.TZ = bot.getLocalSettings().timezone;
 
 const server = express();
-var bot = new CryptoBot();
 var port = bot.getServerPort();
 var renderer = new Renderer(bot);
-
-process.env.TZ = bot.getLocalSettings().timezone;
 
 server.use(express.static('web'));
 server.use(express.json());
@@ -25,8 +24,9 @@ server.use('/css', express.static(path.join(__dirname, '../node_modules/bootswat
 App.server = server.listen(port, () => {
   
   (async () => {
-    var result = await update();
     App.log(magentaBright`Crypto-Bot listening on port ${port.toString()}`, true);
+    //await bot.rebuildHistory();
+    var result = await update();
   })();
   
 });
@@ -82,9 +82,9 @@ server.get('/api', async function (req, res) {
       let botId = req.query['botId'].toString();
       let groupBy = req.query['groupBy'].toString();
       let botSettings = bot.getBotSettings(botId);
-      var th = new TradeHistory(bot, botId);
 
-      if (botSettings.strategyType === 'eca-trader') {
+      if (botSettings.active && botSettings.strategyType === 'eca-trader') {
+        var th = new TradeHistory(bot, botId);
         await th.analyseOrders(bot.getClient('krakenBot'), botId, 
           { verbose: true, redownload: true, saveTrades: true, saveDeals:false });
         response = { status: 'success', request: endpoint, data: th.calculatePnL(groupBy), chartType: 'traderBot', pair: bot.getBotSettings(botId).pair };
@@ -103,19 +103,34 @@ server.get('/api', async function (req, res) {
 
     case 'DealPreview': {
       let botId = req.query['botId'].toString();
-      let trader = new EcaTrader(bot, botId);
-      let pair = bot.getBotSettings(botId).pair;
-      var dealResult = trader.dealPlanner.proposeDeal(bot.getPrice(pair), 4);
-      response = {
-        status: 'success',
-        request: endpoint,
-        html: renderer.renderOpenDeal(trader.getLatestOpenDeal()).html + renderer.renderPreview(botId, dealResult.orders).html,
-      };
+      let botSettings = bot.getBotSettings(botId);
+      if (!botSettings.active) {
+        response = {
+          status: 'success',
+          request: 'endpoint',
+          html: `Bot ${botId} is not active.`
+        };
+      }
+      else {
+        let trader = new EcaTrader(bot, botId);
+        var dealResult = trader.dealPlanner.proposeDeal(bot.getPrice(botSettings.pair), 4);
+        response = {
+          status: 'success',
+          request: endpoint,
+          html: renderer.renderOpenDeal(trader.getLatestOpenDeal()).html + renderer.renderPreview(botId, dealResult.orders).html,
+        };
+      }
       break;
     }
 
     case 'ClientSettings': {
       response = { status: 'success', clientSettings: bot.getClientSettings(), traderBotId: bot.getTraderBotIds()[0] };
+      break;
+    }
+
+    case 'RebuildHistory': {
+      await bot.rebuildHistory();
+      response = { status: 'success'};
       break;
     }
 
@@ -161,7 +176,7 @@ process.on('SIGINT', stopServer);
 
 async function stopServer() {
   console.log('\n');
-  App.warning('Exit request by user');
+  App.warning('Exit requested by user');
   App.warning('----- end -----\n');
   App.writeLog();
   bot.saveAllOrders();
@@ -169,7 +184,7 @@ async function stopServer() {
 }
 
 async function update() {
-  var pricePromise = bot.updatePricesSync();
+  var pricePromise = bot.updatePrices();
   var syncPromise = bot.syncExchangeStatus();
 
   return Promise.all([pricePromise, syncPromise]).then(() => bot.processPlans());  

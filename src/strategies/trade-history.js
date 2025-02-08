@@ -24,6 +24,8 @@ export default class TradeHistory {
   #botId;
   #botSettings;
 
+  strategyOrders = {};
+
   /**
    *
    * @param {CryptoBot} bot
@@ -41,13 +43,9 @@ export default class TradeHistory {
    * @param {ClientBase} accountClient
    */
   reportPurchases(accountClient) {
-    console.log(this.#bot.listMissingLocalOrders());
-    var orders = this.#bot
-      .getPlannedOrders(this.#botId)
-      .filter((o) => o.status === 'executed')
-      .map((o) => accountClient.getLocalOrder(o.txid))
-      .map((o) => [o.closeDate.getTime(), o.price, o.volume]);
-
+    var orders = this.#botSettings.strategy.strategyOrders['closed']
+      .map(txid => accountClient.getLocalOrder(txid))
+      .map((order) => [order.closeDate.getTime(), order.price, order.volume]);
     return orders;
   }
 

@@ -1,6 +1,6 @@
 import App from '../app.js';
 import fs from 'fs';
-import { cyanBright, greenBright, magentaBright, yellowBright } from 'ansis';
+import { cyanBright, greenBright, magentaBright, redBright, yellowBright } from 'ansis';
 import BotSettings from '../data/bot-settings.js';
 import EcaOrder from '../data/eca-order.js';
 import ExchangeOrder from '../data/exchange-order.js';
@@ -14,14 +14,17 @@ export default class ClientBase {
   /** @type {Map<string,number>} */
   balances = new Map();
   pairs = new Map();
+  prices = new Map();
   type;
   watchBalance;
+  /** @type {Number} */
+  historyStartYear;
 
   /** @type {boolean} */
   #updateLocalOrders;
 
   /**
-   * @type {Map<string, any>}
+   * @type {Map<string, ExchangeOrder>}
    */
   orders = new Map();
   /** @type {Map<string, Promise>} */
@@ -49,6 +52,7 @@ export default class ClientBase {
     this.type = accountSettings.type;
     this.watchBalance = accountSettings.watchBalance;
     this.active = accountSettings.active;
+    this.historyStartYear = accountSettings.historyStartYear ?? new Date().getFullYear()-5;
 
     if (!fs.existsSync(`${App.DataPath}/${this.id}/`)) {
       App.log(greenBright`Created data path for ${this.id}`);
@@ -56,7 +60,9 @@ export default class ClientBase {
     }
 
     fs.readdirSync(`${App.DataPath}/${this.id}/`).forEach((file) => {
-      if (file.includes('orders')) this.loadOrders(file.split('.')[0]);
+      if (file.includes('orders')) {
+        this.loadOrders(file.split('.')[0]);
+      }
     });
 
     if (!fs.existsSync(`${App.DataPath}/exchanges/${accountSettings.type}-pairs.json`)) this.requestPairList();
@@ -70,6 +76,43 @@ export default class ClientBase {
   set updateLocalOrders(value) {
     this.#updateLocalOrders = value;
   }
+
+  /**
+   * 
+   * @param {string} pair 
+   * @param {Number} price 
+   */
+  setPrice(pair, price) {
+    this.prices.set(pair, Number(price));
+  }
+
+  /**
+     * 
+     * @param {string} pair 
+     * @returns {Number}
+     */
+  getPrice(pair) {
+    let price = this.prices.get(pair);
+  
+    if (typeof price === 'undefined') {
+      let message = `Price for ${pair} not found`;
+      App.printObject(this.prices);
+      App.error(message);
+    }
+    return price;
+  }
+
+  updateTickers(data) {
+    for (const entry of data) {
+      for (const [key, price] of Object.entries(entry)) {
+        App.log(`-> ${key}: ${price}`);
+        let pair  = key.toLowerCase().replace(/[-]/g, '/');
+        pair = PairData.Get(pair);
+        this.setPrice(pair, Number(price));
+      }
+    }
+  }
+  
 
   /**
    *
@@ -161,13 +204,22 @@ export default class ClientBase {
   async loadOrders(file) {
     try {
       const path = `${App.DataPath}/${this.id}/${file}.json`;
-      var data = await App.readFile(path);
+      var data = App.readFileSync(path);
+      let version = data['version'];
+      if (typeof(version) === 'undefined' || version !== ExchangeOrder.CurrentVersion)
+        App.error(`File: <${path}> has version: ${redBright`${version}`} expected: ${cyanBright`${ExchangeOrder.CurrentVersion}`}`);
+
+      delete data['version'];
 
       let orderKeys = Object.keys(data);
-      orderKeys.forEach((entry) => this.setExchangeOrder(entry, data[entry]));
-      App.log(`Loaded ${yellowBright`${file}`} orders: ${yellowBright`${orderKeys.length.toString()}`} found`);
+      orderKeys.forEach((entry) => { 
+        var order = new ExchangeOrder(data[entry]);
+        this.setExchangeOrder(entry,  order);
+      });
+      App.log(`Loaded ${yellowBright`${file}`}: ${yellowBright`${orderKeys.length.toString()}`} orders found`);
       this.updateLocalOrders = false;
     } catch (e) {
+      App.rethrow(e);
       App.error(`[${this.id}]: error while loading ${file}`);
     }
   }
@@ -177,6 +229,9 @@ export default class ClientBase {
    * @param {ExchangeOrder} order
    */
   setExchangeOrder(id, order) {
+    if (typeof(order) === 'undefined')
+      App.error(`Order [${id}] is not an Exchange Order`);
+
     if (!this.orders.has(id) || this.orders.get(id).status != order.status) {
       this.orders.set(id, order);
       this.updateLocalOrders = true;
@@ -206,13 +261,14 @@ export default class ClientBase {
     if (redownload || typeof(order)!=='object') {
       App.warning(`Requesting [${orderId}]`);
       order = await this.queryOrder(orderId);
+      order = this.convertResponseToExchangeOrder(order, orderId);
+      this.setExchangeOrder(orderId, order);
     }
 
-    if (typeof(order) !=='undefined' && (Array.isArray(order) || typeof(order[orderId])!== 'undefined') ) {
+    if (typeof(order) !=='undefined' && (Array.isArray(order) || typeof(order[orderId]) !== 'undefined') ) {
       App.warning('Object format');
       App.printObject(order);
       order = order[orderId];
-      
     }
 
     if (typeof order === 'undefined') {
@@ -230,9 +286,8 @@ export default class ClientBase {
       return null;
     }
     else {
-      this.setExchangeOrder(orderId, order);
-      return this.convertResponseToExchangeOrder(order, orderId);}
-    
+      return order;
+    }
   }
 
   /**
@@ -240,12 +295,16 @@ export default class ClientBase {
    */
   getLocalOrder(orderId) {
     if (!this.orders.has(orderId)) App.warning(`Order ${orderId} not available`);
-    else return this.convertResponseToExchangeOrder(this.orders.get(orderId), orderId);
+    else {
+      var order = this.orders.get(orderId);
+      return order;
+    } 
   }
 
   /**
    *
    * @param {string[]} pairs
+   * @returns {Promise<>}
    */
   async requestTickers(pairs) {
     App.error('not implemented');
@@ -321,22 +380,65 @@ export default class ClientBase {
   }
 
   async loadPairList() {
-    App.log(greenBright`Loading ${this.id} pair list`);
+    App.log(`Loading ${greenBright`${this.id}`} pair list`);
     var assets = App.readFileSync(`${App.DataPath}/exchanges/${this.type}-pairs.json`);
     this.pairs = new Map(Object.entries(assets));
   }
 
-  async requestOrdersByStatus(status) {
+  /**
+   *
+   * @param {string} status
+   * @param {boolean} refresh
+   * @returns {Promise<any[]>}
+   */
+  async requestOrdersByStatus(status, refresh = false) {
     App.error('not implemented');
+    return null;
   }
 
   /**
-   * @param {string} status
-   * @returns
+   *@param {import('ccxt').Order[]} orders
    */
-  async downloadAllOrders(status) {
+  updateOrders(orders) {
     App.error('not implemented');
-    return [];
+  }
+
+  // /**
+  //    * @param {string} status
+  //    * @returns
+  //    */
+  // async downloadAllOrders(status='closed') {
+  //   App.error('Not implemented');
+  // }
+
+  /**
+   * @param {Number} startYear 
+   * @returns 
+   */
+  async rebuildHistory(startYear) {
+    App.error('not implemented');
+  }
+
+  archiveOrdersByYear(year) {
+    var data = {};
+    [...this.orders.entries()].forEach(([id, o]) => {
+      try {
+        var orderYear = new Date(o.openDate).getFullYear();
+        if (orderYear === year) {
+          data[id] = o;
+          App.log(`Added order: ${id}`);
+        }
+      }
+      catch(ex) {
+        App.printObject(o);
+        throw ex;
+      }
+    });
+    if (Object.keys(data).length === 0)
+      App.warning(`[${this.id}]: No orders found for ${year}`);
+    else {
+      this.saveOrdersToFile(`${this.id}-${year}-orders`, data);
+    }
   }
 
   /**
@@ -404,7 +506,9 @@ export default class ClientBase {
       App.error(`[${this.id}]: empty order list: saveOrdersToFile`);
     }
 
+    data['version'] = ExchangeOrder.CurrentVersion;
+
     App.writeFile(`${App.DataPath}/${this.id}/${filename}`, data);
-    App.log(`Saved ${Object.keys(data).length} orders`);
+    App.log(`Saved ${Object.keys(data).length-1} orders`);
   }
 }
