@@ -167,7 +167,7 @@ export default class KrakenBot extends ClientBase {
    * @returns
    */
   async submitOrder(action) {
-    var order = action.order;
+    var order = action.plannedOrder;
     App.log(`[${order.id}]: submitting ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
     return this.queryPrivate(KrakenBot.ActionToKrakenOrder(action), action.isTest);
   }
@@ -178,7 +178,7 @@ export default class KrakenBot extends ClientBase {
    * @returns
    */
   async editOrder(action) {
-    var order = action.order;
+    var order = action.plannedOrder;
     App.log(`${greenBright`[${order.id}]: editing`} ${yellowBright`${order.txid}`} on ${order.account}`);
     App.log(`Edited price: ${order.price} volume: ${order.volume}`);
     return this.queryPrivate({
@@ -196,7 +196,7 @@ export default class KrakenBot extends ClientBase {
    * @returns
    */
   async cancelOrder(action) {
-    var order = action.order;
+    var order = action.plannedOrder;
     App.log(`${greenBright`[${order.id}]: cancelling`} ${yellowBright`${order.txid}`} on ${order.account}`);
     return this.queryPrivate({ endpoint: 'CancelOrder', txid: order.txid }, action.isTest);
   }
@@ -250,15 +250,14 @@ export default class KrakenBot extends ClientBase {
    * @param {string[]} txidArray
    */
   async requestOrdersByTxid(txidArray) {
-
-    var txidString = txidArray.slice(0,50).join(',');
+    var txidString = txidArray.slice(0, 50).join(',');
     var data = {
       endpoint: 'QueryOrders',
       txid: txidString,
     };
     if (this.pendingRequests.has(txidString)) return this.pendingRequests.get(txidString);
 
-    if (txidArray.some(txid => !txid)) {
+    if (txidArray.some((txid) => !txid)) {
       App.warning('Contains empty txid');
       App.error(new Error().stack);
     }
@@ -367,11 +366,10 @@ export default class KrakenBot extends ClientBase {
     var data = {};
     [...this.orders.entries()].forEach(([id, o]) => {
       try {
-        var orderYear = new Date(o.opentm*1000).getFullYear();
+        var orderYear = new Date(o.opentm * 1000).getFullYear();
         if (orderYear === year) data[id] = o;
         App.log(`Added order: ${id}`);
-      }
-      catch(ex) {
+      } catch (ex) {
         App.printObject(o);
         throw ex;
       }
@@ -571,7 +569,7 @@ export default class KrakenBot extends ClientBase {
    */
   static ActionToKrakenOrder(action) {
     action.performChecks();
-    var order = action.order;
+    var order = action.plannedOrder;
     var data = {
       userref: order.userref,
       pair: order.pair,
@@ -586,7 +584,7 @@ export default class KrakenBot extends ClientBase {
         break;
 
       default:
-        App.log(`Unknown command ${action.command} // ${action.order?.id}`);
+        App.log(`Unknown command ${action.command} // ${action.plannedOrder?.id}`);
     }
 
     if (order.type === EcaOrder.OrderTypes.limit) {
@@ -617,7 +615,7 @@ export default class KrakenBot extends ClientBase {
       fees: Number(txinfo.fee),
       userref: txinfo.userref,
       pair: PairData.Get(txinfo.descr.pair.toLowerCase()),
-      original: txinfo
+      original: txinfo,
     });
   }
 

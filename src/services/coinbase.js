@@ -75,7 +75,7 @@ export default class CoinbaseClient extends ClientBase {
    * @returns
    */
   async submitOrder(action) {
-    var order = action.order;
+    var order = action.plannedOrder;
     App.log(`[${order.id}]: submitting ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
     var data = CoinbaseClient.ActionToCoinbaseOrder(action);
     App.printObject(data);
@@ -88,7 +88,7 @@ export default class CoinbaseClient extends ClientBase {
    * @returns
    */
   async cancelOrder(action) {
-    var order = action.order;
+    var order = action.plannedOrder;
     App.log(`[${order.id}]: cancelling ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
     let data = {
       order_ids: [order.txid],
@@ -108,10 +108,10 @@ export default class CoinbaseClient extends ClientBase {
     });
   }
 
-  async downloadAllOrders(status='closed') {
+  async downloadAllOrders(status = 'closed') {
     App.warning(`Downloading all ${status} orders from ${this.id}`);
     var orderCount = 0;
-  
+
     return this.requestOrders(status).then((response) => {
       var promises = [];
       promises.push(new Promise((resolve, reject) => (this.updateOrders(response.data.orders, status, true) ? resolve(true) : reject(false))));
@@ -120,7 +120,7 @@ export default class CoinbaseClient extends ClientBase {
       let requests = Math.ceil(orderCount / 50);
       for (let i = 1; i <= requests; i++) {
         App.warning(`Submitting request ${yellowBright`${i.toString()}`} to ${this.id}`);
-  
+
         promises.push(
           this.requestOrders(status, { pagination: 50 * i }).then(
             (response) => new Promise((resolve, reject) => (this.updateOrders(response.data.orders, status, true) ? resolve(true) : reject(false))),
@@ -130,7 +130,6 @@ export default class CoinbaseClient extends ClientBase {
       return Promise.all(promises);
     });
   }
-
 
   async requestOrdersByStatus(status, options = undefined) {
     App.log(`${cyanBright`Downloading`} ${this.id} ${status} orders`);
@@ -191,8 +190,7 @@ export default class CoinbaseClient extends ClientBase {
           data[id] = o.original;
           App.log(`Added order: ${id}`);
         }
-      }
-      catch(ex) {
+      } catch (ex) {
         App.printObject(o);
         throw ex;
       }
@@ -266,8 +264,7 @@ export default class CoinbaseClient extends ClientBase {
       App.log(`\t${error.code}: ${error.error}`);
       App.log('\t' + error.message);
       App.printObject(error.details, false);
-      if (error.code == 429)
-        App.warning('Rate limit exceeded');
+      if (error.code == 429) App.warning('Rate limit exceeded');
     });
   }
 
@@ -422,9 +419,9 @@ export default class CoinbaseClient extends ClientBase {
   static ActionToCoinbaseOrder(action) {
     action.performChecks();
     var orderConfig = {};
-    var order = action.order;
+    var order = action.plannedOrder;
 
-    switch (action.order.type) {
+    switch (action.plannedOrder.type) {
       case 'limit':
         orderConfig = {
           limit_limit_gtc: {
@@ -455,7 +452,7 @@ export default class CoinbaseClient extends ClientBase {
         break;
 
       default:
-        App.log(`Unknown command ${action.command} // ${action.order?.id}`);
+        App.log(`Unknown command ${action.command} // ${action.plannedOrder?.id}`);
     }
 
     return data;

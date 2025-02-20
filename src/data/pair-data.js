@@ -11,6 +11,19 @@ export default class PairData {
   nativeBaseId;
   nativeQuoteId;
 
+  precision;
+  /** @type {Number} */
+  takerFees;
+  /** @type {Number} */
+  makerFees;
+
+  /**
+   * @returns {Number}
+   */
+  get epsilon() {
+    return Math.pow(10, -this.maxBaseDigits);
+  }
+
   static alias = new Map([
     ['xxbtzeur', 'btc/eur'],
     ['xethzeur', 'eth/eur'],
@@ -28,6 +41,9 @@ export default class PairData {
     ['ltceur', 'ltc/eur'],
   ]);
 
+  /**
+   * @param {{ id: string; base: string; quote: string; nativeBaseId: string; nativeQuoteId: string; minVolume: Number; maxBaseDigits: Number; maxQuoteDigits: Number; minBaseDisplayDigits: Number; takerFees?: Number; makerFees?: Number; precision: any}} data
+   */
   constructor(data) {
     this.id = data.id;
     this.base = data.base;
@@ -38,6 +54,9 @@ export default class PairData {
     this.minBaseDisplayDigits = data.minBaseDisplayDigits;
     this.nativeBaseId = data.nativeBaseId;
     this.nativeQuoteId = data.nativeQuoteId;
+    this.takerFees = data.takerFees;
+    this.makerFees = data.makerFees;
+    this.precision = data.precision;
   }
 
   static Get(pair) {

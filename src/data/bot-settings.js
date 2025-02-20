@@ -1,5 +1,4 @@
 import App from '../app.js';
-import Strategy from '../strategies/strategy.js';
 
 export default class BotSettings {
   /** @type {string} */
@@ -8,7 +7,7 @@ export default class BotSettings {
   account;
   /** @type {string} */
   strategyType;
-  /** @type {Strategy} */
+  /** @type {import('../strategies/strategy.js').default } */
   strategy;
   /** @type {string} */
   base;
@@ -52,12 +51,21 @@ export default class BotSettings {
     }
   }
 
+  get fullId() {
+    return `${this.strategyType}:${this.id}`;
+  }
+
+  get fileId() {
+    return `${this.strategyType}-${this.id.replace('/', '-')}`;
+  }
+
   toJSON() {
     return {
       id: this.id,
       account: this.account,
       strategy: this.strategyType,
       base: this.base,
+      alternateBase: this.alternateBase,
       quote: this.quote,
       pair: this.pair,
       active: this.active ?? false,

@@ -14,19 +14,21 @@ export default class EcaOrder {
   strategy = 'eca-stacker';
   botId = '';
   account = '';
-  txid = '';
+  /** @type {Number} */
+  volumeQuote = 0;
   #order;
 
   /**
    *
-   * @param {any} data
+   * @param {{botId: string, account: string, strategy: string, volumeQuote?: Number}} data
    * @param {ExchangeOrder} order
    */
   constructor(data, order) {
-    this.id = `${data.botId}:${nanoid(12)}`;
+    this.id = order.txid ?? `${data.botId}:${nanoid(12)}`;
     this.botId = data.botId;
     this.account = data.account ?? 'unknown';
     this.strategy = data.strategy;
+    this.volumeQuote = data.volumeQuote;
     this.#order = order;
     this.status = EcaOrder.StatusFromExchangeOrder(order.status);
   }
@@ -38,6 +40,12 @@ export default class EcaOrder {
     switch (status) {
       case 'closed':
         return 'executed';
+
+      case 'open':
+        return 'pending';
+
+      case 'planned':
+        return 'planned';
 
       default:
         App.warning(`Unknown status: ${status}`);
@@ -92,15 +100,15 @@ export default class EcaOrder {
   }
 
   get isActive() {
-    return this.order.status === 'pending';
+    return this.status === 'pending';
   }
 
-  get isClosed() {
-    return this.order.status === 'executed';
+  get isExecuted() {
+    return this.status === 'executed';
   }
 
   get isPlanned() {
-    return this.order.status === 'planned';
+    return this.status === 'planned';
   }
 
   get isScheduledForToday() {
@@ -115,7 +123,7 @@ export default class EcaOrder {
   }
 
   toString() {
-    return `[${this.id}] ${this.order.type} ${this.order.side} order on ${this.account} open from ${Utils.toShortDateTime(this.openDate)}`;
+    return `[${this.id}] ${this.order.type} ${this.order.side} order on ${this.account} open from ${Utils.toShortDateTime(this.order.openDate)}`;
   }
 
   toJSON() {
@@ -125,8 +133,10 @@ export default class EcaOrder {
           id: this.id,
           botId: this.botId,
           strategy: this.strategy,
-          txid: this.txid,
           account: this.account,
+          volumeQuote: this.volumeQuote,
+          status: this.status,
+          order: this.order,
         };
     }
   }

@@ -5,6 +5,7 @@ import BotSettings from '../data/bot-settings.js';
 import EcaOrder from '../data/eca-order.js';
 import PairData from '../data/pair-data.js';
 import TraderDeal from '../data/trader-deal.js';
+import ExchangeOrder from '../data/exchange-order.js';
 
 export default class DealPlanner {
   #bot;
@@ -36,7 +37,8 @@ export default class DealPlanner {
       var accountSettings = bot.getAccountSettings(this.botSettings.account);
       this.makerFee = accountSettings.makerFees;
       this.takerFee = accountSettings.takerFees;
-      this.pairData = this.#bot.getClient(this.botSettings.account).getPairData(this.botSettings.pair);
+      let client = this.#bot.getClient(this.botSettings.account);
+      this.pairData = client.getPairData(this.botSettings.pair);
     } catch (e) {
       App.printObject(this.botSettings.toJSON());
       App.error(`[${this.botId}]: invalid bot settings`);
@@ -54,11 +56,12 @@ export default class DealPlanner {
       let message = `[${this.botId}]: max Safety Orders reached: ${n - 1}`;
       App.warning(message);
     }
+    var client = this.#bot.getClient(this.botSettings.account);
     var pair = this.botSettings.pair;
     let safetyOrder = this.safetyOrder;
     let priceDeviation = this.priceDeviation;
     let safetyOrders = openDeal.buyOrders
-      .map((id) => this.#bot.getLocalExchangeOrderFromPlannedOrderId(id, this.botSettings.account))
+      .map((id) => client.getLocalOrder(id))
       .filter((o) => o && !o.isOpen)
       .sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime());
 
@@ -72,22 +75,29 @@ export default class DealPlanner {
       volume = safetyOrder / limitPrice;
       priceDeviation *= this.safetyOrderStepScale;
       safetyOrder *= this.safetyOrderVolumeScale;
+
+      //App.log(`${i}: price: ${limitPrice.toFixed(2)} / ${volume.toFixed(2)}`);
     }
 
-    return new EcaOrder({
-      botId: this.botId,
-      strategy: 'eca-trader',
-      type: 'limit',
-      direction: 'buy',
-      status: 'planned',
-      openDate: new Date(Date.now()),
-      price: limitPrice,
-      volume: volume.toFixed(this.pairData.maxBaseDigits),
-      volumeQuote: limitPrice * volume,
-      pair: pair,
-      userref: safetyOrders[0].userref,
-      account: this.botSettings.account,
-    });
+    return new EcaOrder(
+      {
+        botId: this.botId,
+        strategy: 'trader',
+        volumeQuote: limitPrice * volume,
+        account: this.botSettings.account,
+      },
+      new ExchangeOrder({
+        type: 'limit',
+        side: 'buy',
+        status: 'planned',
+        openDate: new Date(),
+        price: limitPrice,
+        volume: Number(volume.toFixed(this.pairData.maxBaseDigits)),
+        fees: this.makerFee * (limitPrice * volume),
+        pair: pair,
+        userref: safetyOrders[0].userref,
+      }),
+    );
   }
 
   /**
@@ -105,22 +115,27 @@ export default class DealPlanner {
     var pair = this.botSettings.pair;
     var maxBaseDigits = this.pairData.maxBaseDigits;
     var maxQuoteDigits = this.pairData.maxQuoteDigits;
+
     orders.push(
-      new EcaOrder({
-        botId: this.botId,
-        strategy: 'eca-trader',
-        type: 'market',
-        direction: 'buy',
-        status: 'planned',
-        openDate: new Date(Date.now()),
-        price: Number(currentPrice),
-        volume: Number(volume.toFixed(maxBaseDigits)),
-        volumeQuote: initialOrderSize,
-        fees: this.takerFee * initialOrderSize,
-        account: this.botSettings.account,
-        userref: this.botSettings.userref + dealIndex,
-        pair: pair,
-      }),
+      new EcaOrder(
+        {
+          botId: this.botId,
+          strategy: 'trader',
+          volumeQuote: initialOrderSize,
+          account: this.botSettings.account,
+        },
+        new ExchangeOrder({
+          type: 'market',
+          side: 'buy',
+          status: 'planned',
+          openDate: new Date(),
+          price: Number(currentPrice),
+          volume: Number(volume.toFixed(maxBaseDigits)),
+          fees: this.takerFee * initialOrderSize,
+          userref: this.botSettings.userref + dealIndex,
+          pair: pair,
+        }),
+      ),
     );
 
     let safetyOrder = this.safetyOrder;
@@ -131,21 +146,25 @@ export default class DealPlanner {
       let limitPrice = currentPrice - currentPrice * (i + 1) * priceDeviation;
 
       orders.push(
-        new EcaOrder({
-          botId: this.botId,
-          strategy: 'eca-trader',
-          type: 'limit',
-          direction: 'buy',
-          status: 'planned',
-          openDate: new Date(Date.now()),
-          price: Number(limitPrice),
-          volume: Number((safetyOrder / limitPrice).toFixed(maxBaseDigits)),
-          volumeQuote: safetyOrder,
-          fees: this.makerFee * safetyOrder,
-          account: this.botSettings.account,
-          userref: this.botSettings.userref + dealIndex,
-          pair: pair,
-        }),
+        new EcaOrder(
+          {
+            botId: this.botId,
+            strategy: 'trader',
+            volumeQuote: safetyOrder,
+            account: this.botSettings.account,
+          },
+          new ExchangeOrder({
+            type: 'limit',
+            side: 'buy',
+            status: 'planned',
+            openDate: new Date(),
+            price: Number(limitPrice),
+            volume: Number((safetyOrder / limitPrice).toFixed(maxBaseDigits)),
+            fees: this.makerFee * safetyOrder,
+            userref: this.botSettings.userref + dealIndex,
+            pair: pair,
+          }),
+        ),
       );
 
       priceDeviation *= this.safetyOrderStepScale;
@@ -155,28 +174,33 @@ export default class DealPlanner {
     let volumeCurrency = currentPrice * volume;
     let averagePrice = currentPrice * (1 + this.takerFee);
     let targetProfit = TraderDeal.CalculateProfitTarget(averagePrice, this.profitTarget, this.makerFee);
-    let sellVolume = orders[0].volume * targetProfit;
+    let sellVolume = orders[0].order.volume * targetProfit;
 
     orders.push(
-      new EcaOrder({
-        botId: this.botId,
-        strategy: 'eca-trader',
-        type: 'limit',
-        direction: 'sell',
-        status: 'planned',
-        openDate: Date.now(),
-        price: Number(targetProfit.toFixed(2)),
-        volume: Number(orders[0].volume.toFixed(maxBaseDigits)),
-        volumeQuote: Number(sellVolume.toFixed(maxQuoteDigits)),
-        fees: this.makerFee * sellVolume,
-        account: this.botSettings.account,
-        userref: this.botSettings.userref + dealIndex,
-        pair: pair,
-      }),
+      new EcaOrder(
+        {
+          botId: this.botId,
+          strategy: 'trader',
+          volumeQuote: Number(sellVolume.toFixed(maxQuoteDigits)),
+          account: this.botSettings.account,
+        },
+        new ExchangeOrder({
+          type: 'limit',
+          side: 'sell',
+          status: 'planned',
+          openDate: new Date(),
+          price: Number(targetProfit.toFixed(2)),
+          volume: Number(orders[0].order.volume.toFixed(maxBaseDigits)),
+          fees: this.makerFee * sellVolume,
+          userref: this.botSettings.userref + dealIndex,
+          pair: pair,
+        }),
+      ),
     );
 
-    var total = orders.reduce((sum, order) => {
-      if (order.direction === 'sell') return sum;
+    var total = orders.reduce((sum, ecaOrder) => {
+      let order = ecaOrder.order;
+      if (order.side === 'sell') return sum;
       let volumeCurrency = Number(order.volume * order.price);
       let fee = Number(order.fees);
       sum += volumeCurrency + fee;
@@ -187,7 +211,7 @@ export default class DealPlanner {
     var newDeal = new TraderDeal({
       index: this.botSettings.userref + dealIndex,
       botId: this.botId,
-      buyOrders: orders.filter((o) => o.direction === 'buy').map((o) => o.id),
+      buyOrders: orders.filter((o) => o.order.side === 'buy').map((o) => o.id),
       sellOrders: [],
       status: 'open',
       account: this.botSettings.account,
@@ -199,24 +223,23 @@ export default class DealPlanner {
   /**
    *
    * @param {TraderDeal} deal
-   * @param {*} dealData
+   * @param { { averagePrice: Number, costBasis: Number, targetPrice: Number }} dealData
    */
   proposeTakeProfitOrder(deal, dealData = null) {
     if (dealData === null) dealData = deal.calculateProfitTarget(this.#bot, this.botSettings);
 
-    const { averagePrice, costBasis, targetPrice: targetPrice } = dealData;
-    var currentPrice = this.#bot.getPrice(this.botSettings.pair);
+    const { averagePrice, costBasis, targetPrice } = dealData;
+
+    var client = this.#bot.getClient(this.botSettings.account);
+    var currentPrice = client.getPrice(this.botSettings.pair);
     var sellPrice = targetPrice;
-     
+
     sellPrice = currentPrice > sellPrice ? currentPrice : sellPrice;
     sellPrice = Number(sellPrice.toFixed(this.pairData.maxQuoteDigits));
 
-    var accountClient = this.#bot.getClient(this.botSettings.account);
-    var volume = accountClient.getBalance(this.botSettings.base);
-    if (volume === 0)
-      volume = accountClient.getBalance(this.botSettings.alternateBase);
-    if (volume === 0)
-      App.error(`Cannot plan take profit order: no volume for ${deal.id}`);
+    var volume = client.getBalance(this.botSettings.base);
+    if (volume === 0) volume = client.getBalance(this.botSettings.alternateBase);
+    if (volume === 0) App.error(`Cannot plan take profit order: no volume for ${deal.id}`);
 
     var volumeQuote = volume * sellPrice;
     var pnl = (sellPrice - averagePrice) * volume;
@@ -229,21 +252,25 @@ export default class DealPlanner {
       yellowBright`Estimated PnL: ${colour`${pnl.toFixed(this.pairData.maxQuoteDigits)} ${this.pairData.quote} (${((100 * pnl) / costBasis).toFixed(2)} %)`}`,
     );
 
-    var sellOrder = new EcaOrder({
-      botId: this.botId,
-      strategy: 'eca-trader',
-      type: 'limit',
-      direction: 'sell',
-      status: 'planned',
-      openDate: Date.now(),
-      price: sellPrice,
-      volume: volume.toFixed(this.pairData.maxBaseDigits),
-      volumeQuote: Number(volumeQuote.toFixed(this.pairData.maxQuoteDigits)),
-      fees: Number((this.makerFee * volumeQuote).toFixed(this.pairData.maxQuoteDigits)),
-      account: this.botSettings.account,
-      userref: deal.index,
-      pair: this.botSettings.pair,
-    });
+    var sellOrder = new EcaOrder(
+      {
+        botId: this.botId,
+        strategy: 'trader',
+        volumeQuote: Number(volumeQuote.toFixed(this.pairData.maxQuoteDigits)),
+        account: this.botSettings.account,
+      },
+      new ExchangeOrder({
+        type: 'limit',
+        side: 'sell',
+        status: 'planned',
+        openDate: new Date(),
+        price: sellPrice,
+        volume: Number(volume.toFixed(this.pairData.maxBaseDigits)),
+        fees: Number((this.makerFee * volumeQuote).toFixed(this.pairData.maxQuoteDigits)),
+        userref: deal.index,
+        pair: this.botSettings.pair,
+      }),
+    );
 
     return sellOrder;
   }

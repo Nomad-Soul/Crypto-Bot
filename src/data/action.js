@@ -5,29 +5,37 @@ import PairData from './pair-data.js';
 export default class Action {
   command;
   /** @type {EcaOrder} */
-  order;
+  plannedOrder;
   /** @type {PairData} */
   pairData;
 
+  /** @type {import('../types.js').postExecutionCallback} */
+  postExecutionCallback;
+
+  /**
+   *
+   * @param {{command: string, pairData?: PairData, order: EcaOrder, isTest?: Boolean, callback?: import('../types.js').postExecutionCallback}} data
+   */
   constructor(data) {
     this.command = data.command;
     this.pairData = data.pairData;
+    this.postExecutionCallback = data.callback;
 
     switch (this.command) {
       default:
-        this.order = data.order;
+        this.plannedOrder = data.order;
         break;
     }
 
-    this.isTest = data.isTest;
+    this.isTest = data.isTest ?? false;
   }
 
   performChecks() {
     try {
       switch (this.command) {
         default:
-          if (typeof this.order === 'undefined') throw new Error(`[${this.command}]: Invalid order`);
-          return this.order.isValid();
+          if (typeof this.plannedOrder === 'undefined') throw new Error(`[${this.command}]: Invalid order`);
+          return this.plannedOrder.isValid();
       }
     } catch (e) {
       App.printObject(this);
@@ -53,67 +61,74 @@ export default class Action {
    *
    * @param {EcaOrder} order
    * @param {PairData} pairData
-   * @param {PairData} pairData
+   * @param {import('../types.js').postExecutionCallback} callback
    * @returns {Action}
    */
-  static ReplaceAction(order, pairData, isTest = false) {
+  static ReplaceAction(order, pairData, callback, isTest = false) {
     if (typeof order === 'undefined') throw new Error('Invalid order passed to Action.ReplaceAction');
     return new Action({
       command: 'editOrder',
       order: order,
       isTest: isTest,
       pairData: pairData,
+      callback: callback,
     });
   }
 
   /**
    *
-   * @param {EcaOrder} order
+   * @param {EcaOrder} plannedOrder
    * @param {PairData} pairData
-   * @param {PairData} pairData
+   * @param {import('../types.js').postExecutionCallback} callback
    * @returns {Action}
    */
-  static MarketAction(order, pairData) {
-    if (typeof order === 'undefined') throw new Error('Invalid order passed to Action.MarketAction');
-    if (order.type !== EcaOrder.OrderTypes.market) throw new Error(`[${order.id}]: Invalid order type ${order.type} - expected 'market'`);
+  static MarketAction(plannedOrder, pairData, callback) {
+    if (typeof plannedOrder === 'undefined') throw new Error('Invalid order passed to Action.MarketAction');
+    if (plannedOrder.order.type !== EcaOrder.OrderTypes.market)
+      throw new Error(`[${plannedOrder.id}]: Invalid order type ${plannedOrder.order.type} - expected 'market'`);
     return new Action({
       command: 'submitOrder',
-      order: order,
+      order: plannedOrder,
       pairData: pairData,
+      callback: callback,
     });
   }
 
   /**
    *
-   * @param {EcaOrder} order
+   * @param {EcaOrder} plannedOrder
    * @param {PairData} pairData
+   * @param {import('../types.js').postExecutionCallback} callback
    * @returns {Action}
    */
-  static LimitAction(order, pairData) {
-    if (typeof order === 'undefined') throw new Error('Invalid order passed to Action.LimitAction');
-    if (order.type !== EcaOrder.OrderTypes.limit) throw new Error(`[${order.id}]: Invalid order type ${order.type} - expected ${EcaOrder.OrderTypes.limit}`);
+  static LimitAction(plannedOrder, pairData, callback) {
+    if (typeof plannedOrder === 'undefined') throw new Error('Invalid order passed to Action.LimitAction');
+    if (plannedOrder.order.type !== EcaOrder.OrderTypes.limit)
+      throw new Error(`[${plannedOrder.id}]: Invalid order type ${plannedOrder.order.type} - expected ${EcaOrder.OrderTypes.limit}`);
     return new Action({
       command: 'submitOrder',
-      order: order,
+      order: plannedOrder,
       pairData: pairData,
+      callback: callback,
     });
   }
 
   /**
    *
-   * @param {EcaOrder} order
+   * @param {EcaOrder} plannedOrder
    * @param {PairData} pairData
+   * @param {import('../types.js').postExecutionCallback} callback
    * @returns
    */
-  static OrderToAction(order, pairData) {
-    switch (order.type) {
+  static OrderToAction(plannedOrder, pairData, callback = null) {
+    switch (plannedOrder.order.type) {
       case 'market':
-        return this.MarketAction(order, pairData);
+        return this.MarketAction(plannedOrder, pairData, callback);
       case 'limit':
-        return this.LimitAction(order, pairData);
+        return this.LimitAction(plannedOrder, pairData, callback);
 
       default:
-        App.error(`Invalid order type in ${order.id}`);
+        App.error(`Invalid order type in ${plannedOrder.id}`);
     }
   }
 }

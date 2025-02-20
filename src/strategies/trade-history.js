@@ -44,36 +44,37 @@ export default class TradeHistory {
    */
   reportPurchases(accountClient) {
     var orders = this.#botSettings.strategy.strategyOrders['closed']
-      .map(txid => accountClient.getLocalOrder(txid))
+      .map((txid) => accountClient.getLocalOrder(txid))
       .map((order) => [order.closeDate.getTime(), order.price, order.volume]);
     return orders;
   }
 
   /**
    *
-   * @param {ClientBase} accountClient
+   * @param {ClientBase} client
    * @param {string} botId
    * @param {{verbose: boolean, redownload: boolean, saveTrades: boolean, saveDeals: boolean}} options
    */
-  async analyseOrders(accountClient, botId, options = undefined) {
+  async analyseOrders(client, botId, options = undefined) {
     const { verbose, redownload, saveTrades, saveDeals } = options || { verbose: false, redownload: false, saveTrades: false, saveDeals: false };
 
     var balance = 0;
-    if (redownload) await accountClient.downloadAllOrders('closed');
+    if (redownload) await client.downloadAll(2021, 'closed');
 
     var dataDeals = [];
     var dealIndex = 1;
 
-    var orders = [...accountClient.orders.keys()]
-      .map((txid) => accountClient.getLocalOrder(txid))
-      .filter((o) => o.isClosed)
-      .sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime());
+    var orders = [...client.orders.values()].filter((o) => o.isClosed).sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime());
     var prevOrder = null;
     var costBasis = 0;
     var proceeds = 0;
     var openDate = orders[0].openDate;
     var closeDate;
-    var currentPrice = this.#bot.getPrice(this.#botSettings.pair);
+    await client.awaitPrices();
+    var currentPrice = client.getPrice(this.#botSettings.pair);
+
+    App.log(`Analysing Orders. Current Price for ${cyanBright`${this.#botSettings.pair}`} is ${currentPrice.toFixed(2)};`);
+
     /**
      *
      * @param {ExchangeOrder} lastOrder
@@ -122,7 +123,7 @@ export default class TradeHistory {
           botId: botId,
           buyOrders: buyOrders,
           sellOrders: sellOrders,
-          account: accountClient.id,
+          account: client.id,
           status: lastOrder.side === 'sell' ? 'closed' : 'open',
         });
         deals.push(deal);
@@ -151,17 +152,16 @@ export default class TradeHistory {
 
       if (order.side === 'sell' && (balance > 2e-8 || balance < 0)) color = redBright;
 
-      let localOrder = this.#bot.getPlannedOrderByTxid(order.txid);
       if (verbose) {
         var currency = order.pair.split('/')[1].toUpperCase();
         App.log(
-          color`[${order.userref}]: ${Utils.toShortDate(order.closeDate)} ${order.side} [${order.txid} / ${localOrder?.id || 'unknown'}] Vol: ${order.volume.toFixed(8)} / ${balance.toFixed(8)} (${(order.volume * order.price).toFixed(2)} ${currency} + ${order.fees.toFixed(2)} ${currency})`,
+          color`[${order.userref}]: ${Utils.toShortDate(order.closeDate)} ${order.side} [${order.txid} / ${order.txid || 'unknown'}] Vol: ${order.volume.toFixed(8)} / ${balance.toFixed(8)} (${(order.volume * order.price).toFixed(2)} ${currency} + ${order.fees.toFixed(2)} ${currency})`,
         );
       }
 
-      if (typeof localOrder !== 'undefined' && saveDeals) {
-        if (order.side === 'buy') buyOrders.push(localOrder.id);
-        else sellOrders.push(localOrder.id);
+      if (typeof order !== 'undefined' && saveDeals) {
+        if (order.side === 'buy') buyOrders.push(order.txid);
+        else sellOrders.push(order.txid);
       }
 
       prevOrder = order;
@@ -171,21 +171,21 @@ export default class TradeHistory {
     if (saveDeals) saveDeal(prevOrder);
 
     if (saveTrades) {
-      App.writeFile(`${App.DataPath}/${accountClient.id}/${accountClient.id}-data`, dataDeals);
+      App.writeFile(`${App.DataPath}/${client.id}/${this.#botSettings.fileId}-trades`, dataDeals);
     }
     if (saveDeals) {
       var dealObject = {};
       for (let deal of deals) {
         dealObject[deal.id] = deal;
       }
-      App.writeFile(`${App.DataPath}/${accountClient.id}/${accountClient.id}-deals-recovered`, dealObject);
+      App.writeFile(`${App.DataPath}/${client.id}/${this.#botSettings.fileId}-deals-recovered`, dealObject);
     }
   }
 
   calculatePnL(timeInterval = 'week') {
     var dataset = new Map();
     var account = this.#botSettings.account;
-    var data = App.readFileSync(`${App.DataPath}/${account}/${account}-data.json`);
+    var data = App.readFileSync(`${App.DataPath}/${account}/${this.#botSettings.fileId}-trades.json`);
 
     App.warning(`Analysing ${data.length} trades`);
 
@@ -202,7 +202,6 @@ export default class TradeHistory {
       return label;
     }
 
-    
     /**
      *
      * @param {TradeData} trade
@@ -259,7 +258,7 @@ export default class TradeHistory {
   /**
    * We do not consider the case that we might not trade for an entire year.
    * Just return the converted array
-   * @param {Map<string, TradeData>} dataset 
+   * @param {Map<string, TradeData>} dataset
    */
   #fillMissingYears(dataset) {
     var items = [];

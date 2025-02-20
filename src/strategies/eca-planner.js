@@ -1,6 +1,7 @@
 import EcaOrder from '../data/eca-order.js';
 import App from '../app.js';
 import BotSettings from '../data/bot-settings.js';
+import ExchangeOrder from '../data/exchange-order.js';
 
 export default class EcaPlanner {
   botId;
@@ -21,22 +22,33 @@ export default class EcaPlanner {
   recurringPlan(startDate, count = 30) {
     var orders = [];
     var options = this.botSettings.options;
+    const hourMilliseconds = 1000 * 60 * 60;
+
+    var dateNow = new Date();
+    if (dateNow.getTime() - startDate.getTime() > hourMilliseconds * options.frequency) startDate = dateNow;
 
     for (let i = 0; i < count; i++) {
-      let nextDate = new Date(startDate.getTime() + (i + 1) * (1000 * 60 * 60) * options.frequency);
+      let nextDate = new Date(startDate.getTime() + (i + 1) * hourMilliseconds * options.frequency);
 
-      orders[i] = new EcaOrder({
-        botId: this.botId,
-        openDate: nextDate,
-        volumeQuote: this.botSettings.maxVolumeQuote,
-        pair: this.botSettings.pair,
-        account: this.botSettings.account,
-        userref: this.botSettings.userref,
-        strategy: this.botSettings.strategyType,
-        type: 'market',
-        direction: 'buy',
-        status: 'planned',
-      });
+      orders[i] = new EcaOrder(
+        {
+          botId: this.botId,
+          strategy: this.botSettings.strategyType,
+          volumeQuote: this.botSettings.maxVolumeQuote,
+          account: this.botSettings.account,
+        },
+        new ExchangeOrder({
+          type: 'market',
+          side: 'buy',
+          status: 'planned',
+          openDate: nextDate,
+          price: 0,
+          volume: 0,
+          fees: 0,
+          userref: this.botSettings.userref,
+          pair: this.botSettings.pair,
+        }),
+      );
 
       if (orders[i].isValid()) continue;
     }
@@ -44,6 +56,9 @@ export default class EcaPlanner {
     return orders;
   }
 
+  /**
+   * @param {Date} startDate
+   */
   monthlyPlan(startDate, count = 1) {
     var orders = [];
     var options = this.botSettings.options;
@@ -57,18 +72,26 @@ export default class EcaPlanner {
         App.error(`Invalid date in ${this.botId}`);
       }
 
-      orders[i] = new EcaOrder({
-        botId: this.botId,
-        openDate: nextDate,
-        volumeQuote: this.botSettings.maxVolumeQuote,
-        pair: this.botSettings.pair,
-        account: this.botSettings.account,
-        userref: this.botSettings.userref,
-        strategy: this.botSettings.strategyType,
-        type: 'market',
-        direction: 'buy',
-        status: 'planned',
-      });
+      orders[i] = new EcaOrder(
+        {
+          botId: this.botId,
+          strategy: this.botSettings.strategyType,
+          volumeQuote: this.botSettings.maxVolumeQuote,
+          account: this.botSettings.account,
+        },
+        new ExchangeOrder({
+          type: 'market',
+          side: 'buy',
+          status: 'planned',
+          openDate: nextDate,
+          price: 0,
+          volume: 0,
+          fees: 0,
+          userref: this.botSettings.userref,
+          pair: this.botSettings.pair,
+        }),
+      );
+
       if (orders[i].isValid()) continue;
     }
 
@@ -76,16 +99,15 @@ export default class EcaPlanner {
   }
 
   /**
-   * @param {EcaOrder[]} existingOrders
+   * @param {EcaOrder} lastOrder
    */
-  proposeNext(existingOrders) {
+  proposeNext(lastOrder) {
     var dateNow = new Date();
-    var lastOrder = existingOrders[existingOrders.length - 1];
     var newOrders = [];
     if (this.botSettings.options.type === 'recurring') {
-      newOrders = this.recurringPlan(lastOrder.closeDate, 1);
+      newOrders = this.recurringPlan(lastOrder.order.closeDate, 1);
     } else if (this.botSettings.options.type === 'monthly') {
-      if (lastOrder.closeDate.getMonth() === dateNow.getMonth()) {
+      if (lastOrder.order.closeDate.getMonth() === dateNow.getMonth()) {
         let nextMonth = new Date(dateNow.getFullYear(), dateNow.getMonth() + 1, 1);
         newOrders = this.monthlyPlan(nextMonth, 1);
       } else newOrders = this.monthlyPlan(dateNow, 1);
@@ -127,8 +149,7 @@ export default class EcaPlanner {
 
     var minValue = Math.min(...distances);
     var closestDay = distances.findIndex((e) => e === minValue) === 0 ? nextDesiredDay : prevDesiredDay;
-    if (closestDay < 14)
-      closestDay+=7;
+    if (closestDay < 14) closestDay += 7;
 
     var chosenDate = new Date(target.getFullYear(), month, closestDay, 0, 0, 0);
     var nextDay = new Date(chosenDate.getTime() + 60000 * 60 * 24);

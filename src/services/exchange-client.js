@@ -1,6 +1,6 @@
 import { redBright, yellowBright, cyanBright, greenBright, magentaBright } from 'ansis';
 import ClientBase from './client.js';
-import ccxt, { Exchange, kraken } from 'ccxt';
+import ccxt, { Exchange, kraken, coinbase } from 'ccxt';
 import fs from 'fs';
 import App from '../app.js';
 import PairData from '../data/pair-data.js';
@@ -13,7 +13,6 @@ import BotSettings from '../data/bot-settings.js';
 export default class ExchangeClient extends ClientBase {
   /** @type {Exchange} */
   #ccxtClient;
-  /** @type {import('ccxt').Dictionary} */
   /**
    * @param {import('../types.js').AccountSettings} accountSettings
    */
@@ -27,22 +26,18 @@ export default class ExchangeClient extends ClientBase {
     let thisYear = new Date().getFullYear();
     let startYear = this.historyStartYear;
     let rebuildHistory = false;
-    for (let i = startYear; i <= thisYear; i++ ) {
-      let filename =`${App.DataPath}/${this.id}/${this.id}-${i}-orders.json`;
+    for (let i = startYear; i <= thisYear; i++) {
+      let filename = `${App.DataPath}/${this.id}/${this.id}-${i}-orders.json`;
       if (!fs.existsSync(filename)) {
         App.warning(`File ${filename} not found`);
         rebuildHistory = true;
         break;
-      }
-      else
-        startYear++;
+      } else startYear++;
     }
-
-    if (rebuildHistory)
-      this.rebuildHistory(startYear);
-
-    // if (this.id == 'kraken')
-    // this.requestOrder('OUDB2W-HARPS-AE5IBL').then(data => App.printObject(data));
+    if (rebuildHistory) this.rebuildHistory(startYear);
+    //this.testFee();
+    // if (this.id == 'coinbase')
+    // this.requestOrder('5888f8f1-81e7-473d-8a36-5f1dfdc57499').then(data => App.printObject(data));
     //this.#krakenClient = new KrakenBot(accountSettings);
     // this.requestTickers(['btc/eur'.toUpperCase()]).then((response) => console.log(response));
     // this.requestBalance().then((r) => console.log(r));
@@ -62,12 +57,20 @@ export default class ExchangeClient extends ClientBase {
     console.log(order);
     var elapsed = Date.now() - now;
     App.warning(`Took: ${elapsed} ms`);
+  }
 
-    // now = Date.now();
-    // order = await this.#krakenClient.queryOrder(orderId);
-    // elapsed = Date.now() - now;
-    // console.log(order.txid);
-    // App.warning(`Took: ${elapsed} ms`);
+  async testFee() {
+    this.requestPairList();
+    // var markets = await this.#ccxtClient.loadMarkets();
+    // var btc = markets['BTC/EUR'];
+    // App.printObject(markets['BTC/EUR'].base);
+    // App.error();
+    // var currency = this.#ccxtClient.currencies['XETH'];
+    // App.printObject(currency);
+    // //this.#ccxtClient.fetchTradingFees().then((r) => App.printObject(r));
+    // this.#ccxtClient.fetchTradingFee('ETH/EUR').then((r) => App.printObject(r));
+    // //this.#ccxtClient.fetchDepositWithdrawFee('ETH').then((r) => App.printObject(r));
+    // //App.log(`[${cyanBright`${this.type}`}] ETH: ${currency.fee} / ${currency.withdraw}`);
   }
 
   /**
@@ -86,27 +89,57 @@ export default class ExchangeClient extends ClientBase {
    * @returns
    */
   async submitOrder(action) {
-    var order = action.order;
-    App.log(`${greenBright`[${order.id}]: submitting`} ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
-    return this.#ccxtClient.createOrder(order.pair.toUpperCase(), order.type, order.direction, order.volume, order.price);
+    var order = action.plannedOrder.order;
+    App.log(
+      `${greenBright`[${action.plannedOrder.id}]: submitting`} ${yellowBright`${order.type} order ${order.side} at ${order.price.toFixed(2)} on ${action.plannedOrder.account}`}`,
+    );
+    var promise = this.#ccxtClient
+      .createOrder(order.pair.toUpperCase(), order.type, order.side, order.volume, order.price, {
+        clientOrderId: action.plannedOrder.order.userref,
+      })
+      .then((order) => {
+        let exOrder = ExchangeClient.ConvertCcxtOrderToExchangeOrder(order, this);
+        if (order.id) {
+          this.setExchangeOrder(exOrder.txid, exOrder);
+          return { order: exOrder, result: true };
+        } else return { order: exOrder, result: false };
+      });
+    if (action.postExecutionCallback) {
+      return promise.then((response) => action.postExecutionCallback(response));
+    } else return promise;
   }
 
   async cancelOrder(action) {
     var order = action.order;
-    App.log(`${greenBright`[${order.id}]: cancelling`} ${yellowBright`${order.txid}`} on ${action.account}`);
+    App.log(`${greenBright`[${order.id}]: cancelling`} order on ${action.account}`);
     return this.#ccxtClient.cancelOrder(order.txid);
   }
 
+  /**
+   *
+   * @param {Action} action
+   * @returns
+   */
   async editOrder(action) {
-    var order = action.order;
-    App.log(`${greenBright`[${order.id}]: editing`} ${yellowBright`${order.txid}`} on ${action.account}`);
+    var order = action.plannedOrder.order;
+    App.log(`${greenBright`[${order.txid}]: editing`} order on ${action.plannedOrder.account}`);
     App.log(`Edited price: ${order.price} volume: ${order.volume}`);
-    return this.#ccxtClient.editOrder(order.txid, order.pair, order.type, order.direction, order.vol, order.price);
+    var promise = this.#ccxtClient.editOrder(order.txid, order.pair.toUpperCase(), order.type, order.side, order.volume, order.price).then((order) => {
+      if (order.id) {
+        let exOrder = ExchangeClient.ConvertCcxtOrderToExchangeOrder(order, this);
+        this.setExchangeOrder(exOrder.txid, exOrder);
+        return { order: exOrder, result: true };
+      } else {
+        return { order: action.plannedOrder.order, result: false };
+      }
+    });
+    if (action.postExecutionCallback) {
+      return promise.then((response) => action.postExecutionCallback(response));
+    } else return promise;
   }
 
   async requestPairList(saveToFile = true) {
     App.log(greenBright`Requesting pair list for ${this.id}`);
-    await this.#ccxtClient.loadMarkets();
 
     return this.#ccxtClient
       .loadMarkets()
@@ -117,7 +150,7 @@ export default class ExchangeClient extends ClientBase {
       )
       .then((data) => {
         if (!saveToFile) return;
-        var dataEntries = { _exchange: this.type, _createdOn: new Date(Date.now()).toISOString() };
+        var dataEntries = { _exchange: this.type, _createdOn: new Date().toISOString() };
         data.forEach((pairData) => (dataEntries[pairData.id] = pairData));
         App.warning(`D: ${data.length} C:${App.locale.currency}`);
         App.writeFile(`${App.DataPath}/exchanges/${this.type}-pairs`, dataEntries);
@@ -127,40 +160,47 @@ export default class ExchangeClient extends ClientBase {
   /**
    *
    * @param {string} txid
+   * @returns {Promise<ExchangeOrder>}
    */
   async requestOrder(txid) {
-    return this.#ccxtClient.fetchOrder(txid);
+    App.log(`Downloading order <${yellowBright`${txid}`}>`);
+    return this.#ccxtClient.fetchOrder(txid).then((order) => {
+      let exOrder = ExchangeClient.ConvertCcxtOrderToExchangeOrder(order, this);
+      this.setExchangeOrder(exOrder.txid, exOrder);
+      return exOrder;
+    });
   }
 
   /**
-   * @param {Number} startYear 
-   * @returns 
+   * @param {Number} startYear
+   * @returns
    */
   async rebuildHistory(startYear) {
     App.log(`Rebuilding history for account ${magentaBright`${this.id}`}: ${startYear}-${new Date().getFullYear()}`);
-    return this.downloadAll(startYear)
-      .then(orders => {
-        orders.forEach(order => this.setExchangeOrder(order.txid, order));
-        for (let i=startYear; i<= new Date().getFullYear(); i++) {
-          this.archiveOrdersByYear(i);
-        }
-      });
+    return this.downloadAll(startYear).then((orders) => {
+      orders.forEach((order) => this.setExchangeOrder(order.txid, order));
+      for (let i = startYear; i <= new Date().getFullYear(); i++) {
+        this.archiveOrdersByYear(i);
+      }
+    });
   }
 
   /**
-   * 
-   * @param {Number} startYear 
-   * @param {string} status 
-   * @returns 
+   *
+   * @param {Number} startYear
+   * @param {string} status
+   * @returns
    */
-  async downloadAll(startYear=2021, status = 'closed') {
+  async downloadAll(startYear = 2021, status = 'closed') {
     const limit = 50;
     var since = new Date(startYear, 0, 1).getTime();
     var end = new Date(startYear, 11, 31, 23, 59, 59, 999).getTime();
-    var orders=[];
+    var orders = [];
     var lastOrder = {};
-    while (since < this.#ccxtClient.milliseconds ()) {
-      App.log(`Requesting orders from ${cyanBright`${this.id}`}: ${yellowBright`${new Date(since).toDateString()}`} to ${yellowBright`${new Date(end).toDateString()}`}`);
+    while (since < this.#ccxtClient.milliseconds()) {
+      App.log(
+        `Requesting orders from ${cyanBright`${this.id}`}: ${yellowBright`${new Date(since).toDateString()}`} to ${yellowBright`${new Date(end).toDateString()}`}`,
+      );
       const responseOrders = await this.#fetchClosedOrders(undefined, limit, since, end);
       if (responseOrders.length && responseOrders[0]['id'] !== lastOrder['id']) {
         orders = orders.concat(responseOrders);
@@ -174,28 +214,26 @@ export default class ExchangeClient extends ClientBase {
         end = new Date(startYear, 11, 31, 23, 59, 59, 999).getTime();
       }
     }
-    return orders.map(order => ExchangeClient.ConvertCcxtOrderToExchangeOrder(order, this.type))
-      .filter(order => order.isClosed);
+    return orders.map((order) => ExchangeClient.ConvertCcxtOrderToExchangeOrder(order, this)).filter((order) => order.isClosed);
   }
 
   async #fetchClosedOrders(symbol, limit, start, end) {
     switch (this.type) {
       case 'kraken':
-        return this.#ccxtClient.fetchClosedOrders(symbol, start, limit, { end: end/1000});
+        return this.#ccxtClient.fetchClosedOrders(symbol, start, limit, { end: end / 1000 });
 
       case 'coinbase':
       default:
-        return this.#ccxtClient.fetchClosedOrders(symbol, start, limit, { until: end});
+        return this.#ccxtClient.fetchClosedOrders(symbol, start, limit, { until: end });
     }
   }
 
   /**
    * @param {any} response
-   * @param {string} orderId
    * @returns {ExchangeOrder}
    */
-  convertResponseToExchangeOrder(response, orderId) {
-    return ExchangeClient.ConvertCcxtOrderToExchangeOrder(response, this.type);
+  convertResponseToExchangeOrder(response) {
+    return ExchangeClient.ConvertCcxtOrderToExchangeOrder(response, this);
   }
 
   /**
@@ -205,40 +243,44 @@ export default class ExchangeClient extends ClientBase {
    * @returns {Promise<any[]>}
    */
   async requestOrdersByStatus(status, refresh = false) {
-    var orders=[];
+    var orders = [];
+    var since = new Date(new Date().getFullYear(), 0, 1);
+
+    for (let [txid, order] of this.orders) {
+      if (order.openDate > since) since = order.openDate;
+    }
 
     if (refresh) {
-      App.log(`Requesting ${cyanBright`${status}`} orders from ${this.id}`);
+      App.log(`Requesting ${cyanBright`${status}`} orders from ${cyanBright`${this.id}`} starting from ${yellowBright`${App.toDateTime(since)}`}`);
       var supported = true;
       switch (status) {
         case 'open':
-          if (this.#ccxtClient.has['fetchOpenOrders']) orders = await this.#ccxtClient.fetchOpenOrders();
+          if (this.#ccxtClient.has['fetchOpenOrders']) orders = await this.#ccxtClient.fetchOpenOrders(undefined, since.getTime());
           else supported = false;
           break;
 
         case 'closed':
           if (this.#ccxtClient.has['fetchClosedOrders']) {
-            orders = await this.#ccxtClient.fetchClosedOrders();
-          }
-          else supported = false;
+            orders = await this.#ccxtClient.fetchClosedOrders(undefined, since.getTime());
+          } else supported = false;
           break;
 
         case 'cancelled':
-          if (this.#ccxtClient.has['fetchCanceledAndClosedOrders']) orders = await this.#ccxtClient.fetchCanceledAndClosedOrders();
+          if (this.#ccxtClient.has['fetchCanceledAndClosedOrders']) orders = await this.#ccxtClient.fetchCanceledAndClosedOrders(undefined, since.getTime());
           else supported = false;
           break;
       }
 
       if (!supported) {
-        if (this.#ccxtClient.has['fetchOrders']) 
-          orders = await this.#ccxtClient.fetchOrders().then((orders) => orders.filter((o) => o.status === 'status'));
+        if (this.#ccxtClient.has['fetchOrders'])
+          orders = await this.#ccxtClient.fetchOrders(undefined, since.getTime()).then((orders) => orders.filter((o) => o.status === 'status'));
         else throw new Error(`${this.#ccxtClient.id} does not support any method to download orders by status`);
       }
 
-      App.log(`Received ${cyanBright`${orders.length.toString()}`} ${status} orders from ${this.type}`);
-      orders.map(order => ExchangeClient.ConvertCcxtOrderToExchangeOrder(order, this.id));
-    } 
-    else orders = [...this.orders.values()].filter((o) => o.status === 'status');
+      App.log(`Received ${cyanBright`${orders.length.toString()}`} ${status} orders from ${this.type}:${this.id}`);
+      orders = orders.map((order) => ExchangeClient.ConvertCcxtOrderToExchangeOrder(order, this));
+      orders.forEach((order) => this.setExchangeOrder(order.txid, order));
+    } else orders = [...this.orders.values()].filter((o) => o.status === 'status');
     return orders;
   }
 
@@ -256,7 +298,7 @@ export default class ExchangeClient extends ClientBase {
    */
   updateOrders(orders) {
     for (const order of orders) {
-      this.setExchangeOrder(order.id, ExchangeClient.ConvertCcxtOrderToExchangeOrder(order, this.type));
+      this.setExchangeOrder(order.id, ExchangeClient.ConvertCcxtOrderToExchangeOrder(order, this));
     }
   }
 
@@ -267,8 +309,9 @@ export default class ExchangeClient extends ClientBase {
    */
   async requestTickers(pairs) {
     App.log(`Updating prices for account ${greenBright`${this.id}`}`);
-    return this.#ccxtClient.fetchTickers(pairs)
-      .then((data) => Object.entries(data).map(([key, ticker]) => ({ [key]: ticker.last })));
+    this.pricePromise = this.#ccxtClient.fetchTickers(pairs).then((data) => Object.entries(data).map(([key, ticker]) => ({ [key]: ticker.last })));
+
+    return this.pricePromise;
   }
 
   /**
@@ -277,39 +320,76 @@ export default class ExchangeClient extends ClientBase {
    */
   async requestBalance() {
     App.log(`Requesting balance from ${greenBright`${this.id}`}`);
-    return this.#ccxtClient
+    this.balancePromise = this.#ccxtClient
       .fetchBalance()
       .then((balances) => Object.entries(balances.total).forEach((balance) => this.balances.set(balance[0].toLowerCase(), balance[1])))
-      .then(() => [...this.balances.entries()]);
+      .then(() => (this.balancePromise = null));
+
+    return this.balancePromise;
   }
 
   /**
    *
    * @param {string[]} txidArray
-   * @returns {Promise<>}
+   * @returns {Promise<ExchangeOrder[]>}
    */
   async requestOrdersByTxid(txidArray) {
     App.log(greenBright`Downloading ${this.id} orders ${yellowBright`${txidArray.join(', ')}`}`, true);
+    var promise;
 
     if (this.#ccxtClient.id === 'kraken') {
       /** @type {kraken} */
       // @ts-ignore
       var krakenClient = this.#ccxtClient;
-      return krakenClient.fetchOrdersByIds(txidArray).then((orders) =>
-        orders.forEach((order) => {
-          this.setExchangeOrder(order.id, order);
-          return true;
+      promise = krakenClient.fetchOrdersByIds(txidArray).then((orders) =>
+        orders.map((order) => {
+          var exOrder = ExchangeClient.ConvertCcxtOrderToExchangeOrder(order, this);
+          this.setExchangeOrder(order.id, exOrder);
+          return exOrder;
         }),
       );
     } else {
-      Promise.all(txidArray.map((txid) => this.requestOrder(txid))).then((orders) =>
-        orders.forEach((order) => this.setExchangeOrder(order.id, ExchangeClient.ConvertCcxtOrderToExchangeOrder(order, this.type))),
-      );
+      promise = Promise.all(txidArray.map((txid) => this.requestOrder(txid)));
     }
+    return promise;
   }
 
   /**
-   * @param {any} marketData
+   *
+   * @param {Action[]} actions
+   * @returns {Promise<ExchangeOrder[]|any>}
+   */
+  async executeActions(actions) {
+    if (actions.length == 0) return 'Nothing to do';
+    var responses = [];
+    for (let i = 0; i < actions.length; i++) {
+      let action = actions[i];
+      App.log(`${[action.plannedOrder.id]}: ${action.command}`);
+
+      switch (action.command) {
+        case 'submitOrder':
+          responses.push(await this.submitOrder(action));
+
+          break;
+        case 'editOrder':
+          responses.push(await this.editOrder(action));
+          break;
+
+        case 'cancelOrder':
+          //responses.push(await this.processAction(action));
+          break;
+
+        default:
+          App.printObject(action);
+          App.error(`Unknown action: ${action.command}`);
+          break;
+      }
+    }
+    return responses;
+  }
+
+  /**
+   * @param {import('ccxt').Market} marketData
    * @returns {PairData}
    * @param {number} precisionMode
    */
@@ -324,63 +404,83 @@ export default class ExchangeClient extends ClientBase {
       maxBaseDigits: ExchangeClient.ConvertPrecision(precisionMode, marketData.precision.amount),
       maxQuoteDigits: ExchangeClient.ConvertPrecision(precisionMode, marketData.precision.price),
       minBaseDisplayDigits: ExchangeClient.ConvertPrecision(precisionMode, marketData.limits.amount.min),
+      makerFees: marketData.maker,
+      takerFees: marketData.taker,
+      precision: marketData.precision,
     });
   }
 
   /**
    * @param {import('ccxt').Order} order
-   * @param {string} exchangeType
+   * @param {ClientBase} client
    * @returns {ExchangeOrder}
    */
-  static ConvertCcxtOrderToExchangeOrder(order, exchangeType) {
-    var closeTime = undefined;
+  static ConvertCcxtOrderToExchangeOrder(order, client) {
+    var closeDate = undefined;
+    var openDate = new Date(order.timestamp);
+    var status = order.status ?? 'open';
+    var volume = order.remaining;
+    var cost = order.cost;
+    var fees = order.fee?.cost ?? 0;
     // ccxt currently lacks a property for the close time (or is undefined)
     try {
-      if (order.status === 'closed' || (order.status==='canceled' && order.filled > 0) ) {
-        switch (exchangeType) {
+      if (status === 'closed' || (status === 'canceled' && order.filled > 0)) {
+        volume = order.filled;
+        switch (client.type) {
           case 'kraken':
-            closeTime = new Date(order.info.closetm * 1000);
-            if (order.status === 'canceled')
-              order.status = 'closed';
+            closeDate = new Date(order.info.closetm * 1000);
+            if (status === 'canceled') status = 'closed';
             break;
 
           case 'coinbase':
-            closeTime = new Date(order.info.last_fill_time);
+            closeDate = new Date(order.info.last_fill_time);
             break;
         }
-        
-      } else if (order.status === 'canceled' && order.filled == 0) {
-        order.status = 'cancelled';
-        switch (exchangeType) {
+      } else if (status === 'canceled' && order.filled == 0) {
+        status = 'cancelled';
+        volume = order.filled;
+        switch (client.type) {
           case 'kraken':
-            closeTime = new Date(order.info.closetm * 1000);
+            closeDate = new Date(order.info.closetm * 1000);
             break;
 
           case 'coinbase':
-            closeTime = new Date(order.info.last_fill_time);
+            closeDate = new Date(order.info.last_fill_time);
+            break;
+        }
+      } else if (status === 'open') {
+        fees = order.type == 'market' ? client.takerFees : client.makerFees;
+        volume = order.remaining;
+        switch (client.type) {
+          case 'coinbase':
+            cost = volume * order.price;
+            cost += fees * volume;
+            break;
+
+          case 'kraken':
+            if (!order.timestamp) openDate = new Date();
             break;
         }
       }
-    
+
       return new ExchangeOrder({
         txid: order.id,
         type: order.type,
-        status: KrakenBot.ConvertKrakenStatusToExchangeOrder(order.status, order),
+        status: KrakenBot.ConvertKrakenStatusToExchangeOrder(status, order),
         side: order.side,
-        openDate: new Date(order.timestamp),
-        closeDate: closeTime,
-        volume: order.filled,
+        openDate: openDate,
+        closeDate: closeDate,
+        volume: order.amount,
         price: order.price,
-        cost: order.cost,
-        fees: order.fee.cost,
+        cost: cost,
+        fees: fees,
         userref: order.clientOrderId,
-        pair: order.symbol.toLowerCase(),
+        pair: order.symbol?.toLowerCase(),
       });
-    }
-    catch(e) {
+    } catch (e) {
       App.rethrow(e);
       App.printObject(order);
-      App.error(`Failed to convert ${exchangeType} order`);
+      App.error(`Failed to convert ${client.type} order`);
     }
   }
 

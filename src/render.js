@@ -1,6 +1,7 @@
 import App from './app.js';
-import CryptoBot from './crypto-bot.js';
+import { redBright, yellowBright, cyanBright, greenBright, magentaBright } from 'ansis';
 import BotSettings from './data/bot-settings.js';
+import CryptoBot from './crypto-bot.js';
 import EcaOrder from './data/eca-order.js';
 import PairData from './data/pair-data.js';
 import TraderDeal from './data/trader-deal.js';
@@ -26,29 +27,15 @@ export default class Renderer {
     var entries = 0;
     var data = [];
     for (let [botId, bot] of Object.entries(bots)) {
-      let botSettings = this.#bot.getBotSettings(botId);
-      let accountClient = this.#bot.getClient(botSettings.account);
-
-      if (typeof(bot.strategy) !== 'object')
-        continue;
-      
-      for (let [status, orders] of Object.entries(bot.strategy.strategyOrders)) {
-        for (let orderTxid of orders) {
-          let order = accountClient.getLocalOrder(orderTxid);
-          data.push(new EcaOrder({
-            botId: botId,
-            account: accountClient.id,
-            strategy: 'eca-stacker',
-          }, order));
-        }
-      }
+      App.log(`Rendering schedule for ${cyanBright`${bot.fullId}`}`);
+      if (typeof bot.strategy !== 'object') continue;
+      data = data.concat([...bot.strategy.getPlannedOrders()]);
     }
-      
-    data  = data.sort((a, b) => b.order.openDate.getTime() - a.order.openDate.getTime());
+
+    data = data.sort((a, b) => b.order.openDate.getTime() - a.order.openDate.getTime());
 
     for (let ecaOrder of data) {
-      if (++entries > 100)
-        break;
+      if (++entries > 100) break;
       let botSettings = this.#bot.getBotSettings(ecaOrder.botId);
       let order = ecaOrder.order;
       let price = order.price;
@@ -80,7 +67,7 @@ export default class Renderer {
         date = new Date(order.openDate);
         // if (order.isScheduledForToday) {
         //   statusClass = dateClass = 'text-info';
-        // } else 
+        // } else
         statusClass = dateClass = 'text-primary';
       }
 
@@ -98,13 +85,13 @@ export default class Renderer {
         <div class="col-md-1 col-2 text-start ${statusClass}">${order.side}</div>
         <div class="col-md-2 col-3 text-end ${costClass}">${Number(volume).toFixed(4)}</div>
         <div class="col-md-2 col-4 text-end order-md-1 order-2 ${costClass}">${cost > 0 ? this.#currency.format(cost) : '-'}</div>
-        <div class="col-md-2 col-4 text-start ${statusClass}" title="${order.txid}" >${status}</div>
+        <div class="col-md-2 col-4 text-start ${statusClass}" title="${order.txid}" >${ecaOrder.status}</div>
         <div class="col-md-2 col-4 text-start text-neutral">${ecaOrder.account}</div>
     </div>`;
       } catch (e) {
         App.printObject(order);
         App.error(`Invalid data: ${order.txid}$`, false);
-        App.rethrow(e);          
+        App.rethrow(e);
       }
     }
 
@@ -133,45 +120,45 @@ export default class Renderer {
       let botSettings = bots[botIds[i]];
       if (!botSettings.active || botSettings.strategyType != 'eca-stacker') continue;
 
-      var accountClient = this.#bot.getClient(botSettings.account);
-      let data = this.#bot
-        .getPlannedOrders(botIds[i])
-        .filter((p) => p.status === 'executed')
-        .map((p) => p.txid);
+      App.log(`Rendering overall stats for ${cyanBright`${botSettings.fullId}`}`);
 
-      var exchangeOrders = [];
-      for (let idxPlan = 0; idxPlan < data.length; idxPlan++) {
-        const txid = data[idxPlan];
-        var exchangeOrder = await accountClient.getExchangeOrder(txid);
-        exchangeOrders.push(exchangeOrder);
-      }
+      var client = this.#bot.getClient(botSettings.account);
+      let pair = botSettings.pair;
 
-      let weightedAverage = exchangeOrders.reduce(
-        (accumulator, order) => [
+      await client.awaitPrices();
+      let currentPrice = client.getPrice(pair);
+
+      // let data = botSettings.strategy.strategyOrders['executed'];
+      let orders = botSettings.strategy.getPlannedOrders('executed');
+
+      let weightedAverage = orders.reduce(
+        (accumulator, ecaOrder) => [
           {
-            weightedSum: accumulator[0].weightedSum + order.cost + order.fees,
-            sum: accumulator[0].sum + order.volume,
+            weightedSum: accumulator[0].weightedSum + ecaOrder.order.cost + ecaOrder.order.fees,
+            sum: accumulator[0].sum + ecaOrder.order.volume,
           },
         ],
         [{ weightedSum: 0, sum: 0 }],
       );
 
-      let pair = botSettings.pair;
-      let pairData = accountClient.getPairData(pair);
-      let groupByMonth = exchangeOrders.reduce((groupBy, order) => {
-        const month = order.closeDate.toLocaleString(App.locale.id, { month: 'long' });
-        if (!Object.hasOwn(groupBy, month)) groupBy[month] = { volume: 0, volumeQuote: 0, fees: 0 };
-        groupBy[month].volume += order.volume;
-        groupBy[month].volumeQuote += order.cost;
-        groupBy[month].fees += order.fees;
+      let pairData = client.getPairData(pair);
+      let groupByMonth = orders.reduce((groupBy, ecaOrder) => {
+        let order = ecaOrder.order;
+        const label = `${order.closeDate.getFullYear()} ${order.closeDate.getMonth()}`;
+        if (!Object.hasOwn(groupBy, label)) groupBy[label] = { volume: 0, volumeQuote: 0, fees: 0 };
+        groupBy[label].volume += order.volume;
+        groupBy[label].volumeQuote += order.cost;
+        groupBy[label].fees += order.fees;
         return groupBy;
       }, {});
 
-      groupByMonth.base = pairData.base;
-      groupByMonth.quote = pairData.quote;
-      dataset.set(botIds[i], groupByMonth);
+      let data = {
+        aggregate: Utils.orderObjectByKeys(groupByMonth),
+        base: pairData.base,
+        quote: pairData.quote,
+      };
 
-      let currentPrice = Number(this.#bot.getPrice(pair));
+      dataset.set(botIds[i], data);
 
       let desiredAmount = Math.max(botSettings.maxVolumeQuote, pairData.minVolume * currentPrice);
       let averagePrice = weightedAverage.map((value) => value.weightedSum / value.sum)[0];
@@ -190,14 +177,9 @@ export default class Renderer {
       if (currentPrice > averagePrice) averageClass = 'text-success';
       else averageClass = 'text-danger';
 
-      var executedOrders = this.#bot.getPlannedOrders(botIds[i]).filter((o) => o.status === 'executed');
+      var executedOrders = botSettings.strategy.getPlannedOrders().filter((o) => o.status === 'executed');
       var lastDateString = 'never';
-      if (executedOrders.length > 0)
-        lastDateString = executedOrders[executedOrders.length - 1].closeDate.toLocaleString(App.locale, {
-          month: '2-digit',
-          day: '2-digit',
-          year: 'numeric',
-        });
+      if (executedOrders.length > 0) lastDateString = App.toShortDate(executedOrders[executedOrders.length - 1].order.closeDate);
 
       if (desiredAmount > botSettings.maxVolumeQuote) amountClass = 'text-danger';
 
@@ -264,23 +246,24 @@ export default class Renderer {
    */
   renderDealPreviewTotal(orders, accountSettings) {
     const { makerFees, takerFees } = accountSettings;
-    var total = orders.reduce((sum, order) => {
-      let volumeCurrency = Number(order.volumeQuote);
+    var total = orders.reduce((sum, ecaOrder) => {
+      let order = ecaOrder.order;
+      let volumeCurrency = Number(ecaOrder.volumeQuote);
       let fees = Number(order.fees);
       sum += volumeCurrency + fees;
       return sum;
     }, 0);
 
-    let volume = Number(orders[orders.length - 1].volume);
+    let volume = Number(orders[orders.length - 1].order.volume);
     let sellCurrency = Number(orders[orders.length - 1].volumeQuote);
-    let sellFees = Number(orders[orders.length - 1].fees);
+    let sellFees = Number(orders[orders.length - 1].order.fees);
     let buyCurrency = Number(orders[0].volumeQuote);
-    let buyFees = Number(orders[0].fees);
-    let buyPrice = Number(orders[0].price);
+    let buyFees = Number(orders[0].order.fees);
+    let buyPrice = Number(orders[0].order.price);
     //App.warning([sellCurrency, makerFees, sellCurrency, buyCurrency, buyFees]);
     let profit = sellCurrency - sellFees - buyCurrency - buyFees;
     let margin = profit / (buyCurrency - buyFees);
-    let lastSO = Number(orders.filter((o) => o.direction === 'buy').slice(-1)[0].price);
+    let lastSO = Number(orders.filter((o) => o.order.side === 'buy').slice(-1)[0].order.price);
 
     return `
       <div class="row border-top">
@@ -304,21 +287,26 @@ export default class Renderer {
    * @returns
    */
   renderOrder(orderData, pairData) {
-    let textClass = orderData.direction === 'sell' ? 'text-success' : 'text-danger';
-    let iconClass = orderData.direction === 'sell' ? 'bi-arrow-up' : 'bi-arrow-down';
-    var datestring = Utils.toShortDate(orderData.closeDate ?? orderData.openDate);
+    let textClass = orderData.order.side === 'sell' ? 'text-success' : 'text-danger';
+    let iconClass = orderData.order.side === 'sell' ? 'bi-arrow-up' : 'bi-arrow-down';
+    var datestring = Utils.toShortDate(orderData.order.closeDate ?? orderData.order.openDate);
 
-    let orderPrice = Number(orderData.price);
+    let orderPrice = Number(orderData.order.price);
     let base = pairData.base.toUpperCase();
     let quote = pairData.quote.toUpperCase();
-    let vol = Number(orderData.volume);
+    let vol = Number(orderData.order.volume);
     let volEuro = vol * orderPrice;
-    let feeEuro = Number(orderData.fees);
+    let feeEuro = Number(orderData.order.fees);
+
+    if (isNaN(volEuro)) {
+      App.printObject(orderData);
+      App.error('Invalid volume in base currency');
+    }
 
     let row = `
       <div class="row">
           <div class="col-3 text-start">${datestring}</div>
-          <div class="col-2-5 text-start fw-bold ${textClass}"><i class="bi ${iconClass}"></i>${orderData.direction} ${orderData.type}</div>
+          <div class="col-2-5 text-start fw-bold ${textClass}"><i class="bi ${iconClass}"></i>${orderData.order.side} ${orderData.order.type}</div>
           <div class="col-1-5 text-end text-info">${volEuro.toFixed(2)} €</div>
           <div class="col-1-5 text-end text-danger">${feeEuro.toFixed(2)} €</div>
           <div class="col-3-5 text-end">${vol.toFixed(4)} ${base} @ ${orderPrice.toFixed(2)} ${quote}</div>
@@ -352,8 +340,9 @@ export default class Renderer {
   /**
    *
    * @param {TraderDeal} openDeal
+   * @returns { Promise<{html: string}>}
    */
-  renderOpenDeal(openDeal) {
+  async renderOpenDeal(openDeal) {
     if (!openDeal) {
       return {
         html: `<div class="bg-dark-container p-md-4 p-2"><div class="row">
@@ -361,17 +350,24 @@ export default class Renderer {
   </div></div>`,
       };
     }
-    var dealPlanner = new DealPlanner(this.#bot, openDeal.botId);
-    var accountClient = this.#bot.getClient(openDeal.account);
-    var botSettings = this.#bot.getBotSettings(openDeal.botId);
-    var pairData = accountClient.getPairData(botSettings.pair);
 
-    const notNil = (i) => !(typeof i === 'undefined' || i === null);
-    
-    
-    let orders = openDeal.orders
-      .map((id) => this.#bot.getPlannedOrder(id));
-    if (orders.some(o => notNil)) {
+    var client = this.#bot.getClient(openDeal.account);
+
+    if (!client.active) {
+      return {
+        html: `<div class="bg-dark-container p-md-4 p-2"><div class="row">
+    <h5 class="text-start">Client ${client.id} for ${client.type} is not active</h5>
+  </div></div>`,
+      };
+    }
+    var dealPlanner = new DealPlanner(this.#bot, openDeal.botId);
+    var botSettings = this.#bot.getBotSettings(openDeal.botId);
+    var strategy = botSettings.strategy;
+    var pairData = client.getPairData(botSettings.pair);
+
+    let orders = openDeal.orders.map((id) => strategy.getPlannedOrder(id));
+
+    if (orders.some((o) => typeof o === 'undefined' || o === null)) {
       App.printObject(orders);
       App.error('Null orders found!', false);
       return {
@@ -380,49 +376,67 @@ export default class Renderer {
   </div></div>`,
       };
     }
-      
-    let closedOrders = orders
-      .filter((order) => order.isClosed)
-      .sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime())
-      .map((order) => this.#bot.getLocalExchangeOrderFromPlannedOrderId(order.id, openDeal.account));
 
-    
-    let nextBuyOrder =
-      orders.find((order) => !order.isClosed && order.direction === 'buy') ??
-      dealPlanner.calculateSafetyOrder(openDeal);
-    let takeProfitOrder = openDeal.sellOrders[0]
-      ? this.#bot.getPlannedOrder(openDeal.sellOrders[0])
-      : dealPlanner.proposeTakeProfitOrder(openDeal);
+    await client.awaitPrices();
+    await client.awaitBalances();
 
-    let takeProfitPrice = takeProfitOrder.price;
+    let closedOrders = orders.filter((ecaOrder) => ecaOrder.order.isClosed).sort((a, b) => a.order.closeDate.getTime() - b.order.closeDate.getTime());
 
-    let safetyOrderPrice = nextBuyOrder.price;
+    let nextBuyOrder = orders.find((ecaOrder) => !ecaOrder.order.isClosed && ecaOrder.order.side === 'buy') ?? dealPlanner.calculateSafetyOrder(openDeal);
+    let takeProfitOrder = openDeal.sellOrders[0] ? strategy.getPlannedOrder(openDeal.sellOrders[0]) : dealPlanner.proposeTakeProfitOrder(openDeal);
+
+    let takeProfitPrice = takeProfitOrder.order.price;
+
+    let safetyOrderPrice = nextBuyOrder.order.price;
     let deltaSafety = (takeProfitPrice - safetyOrderPrice) / 2;
-    
-    const { averagePrice, costBasis, profitTarget } = openDeal.calculateProfitTarget(this.#bot, botSettings);
-    let currentPrice = this.#bot.getPrice(nextBuyOrder.pair);
 
-    
+    const { averagePrice, costBasis, targetPrice } = openDeal.calculateProfitTarget(this.#bot, botSettings);
+
+    if (averagePrice == null || typeof averagePrice == 'undefined') App.error('null averageprice');
+    else App.log(`AveragePrice is ${averagePrice}`);
+
+    let currentPrice = client.getPrice(botSettings.pair);
+
     let widthPnL =
       currentPrice > averagePrice
-        ? (50 * (currentPrice - averagePrice)) / (takeProfitPrice - averagePrice)
-        : (50 * (currentPrice - averagePrice)) / (averagePrice - safetyOrderPrice);
+        ? (currentPrice - averagePrice) / (takeProfitPrice - averagePrice)
+        : (currentPrice - averagePrice) / (averagePrice - safetyOrderPrice);
+
+    widthPnL *= 50;
+    widthPnL = Math.max(-50, Math.min(50, widthPnL));
     let widthLoss = Math.min(widthPnL < 0 ? Math.abs(widthPnL) : 0, 50);
     let widthSafety = widthPnL < 0 ? 50 - widthLoss : 50;
-
     let widthProfit = widthPnL < 0 ? 0 : widthPnL;
 
-    let volumeProfit = Number(takeProfitOrder.volume);
+    App.printObject({
+      nextBuy: {
+        txid: nextBuyOrder.order.txid,
+      },
+      width: {
+        PnL: widthPnL,
+        loss: widthLoss,
+        safety: widthSafety,
+        profit: widthProfit,
+      },
+      price: {
+        current: currentPrice,
+        average: averagePrice,
+        takeProfit: takeProfitPrice,
+        safetyOrder: safetyOrderPrice,
+      },
+    });
+
+    let volumeProfit = Number(takeProfitOrder.order.volume);
     let volumeProfitQuote = volumeProfit * takeProfitPrice;
-    let volumeSafetyQuote = Number(nextBuyOrder.volume * safetyOrderPrice);
+    let volumeSafetyQuote = Number(nextBuyOrder.order.volume * safetyOrderPrice);
     let pnlType = widthPnL < 0 ? 'text-danger' : 'text-success';
     let pnlPercent = (100 * (currentPrice - averagePrice)) / averagePrice;
     let pnlValue = volumeProfit * currentPrice - averagePrice * volumeProfit;
     let profitPotential = volumeProfitQuote - volumeProfit * averagePrice - volumeProfitQuote * 0.0016;
     let profitPercent = 100 * ((takeProfitPrice - averagePrice) / averagePrice - 0.0016);
 
-    let labelLoss = widthPnL < 0 ? currentPrice : '';
-    let labelProfit = widthPnL < 0 ? '' : currentPrice;
+    let labelLoss = widthPnL < 0 ? currentPrice.toFixed(pairData.maxQuoteDigits) : '';
+    let labelProfit = widthPnL < 0 ? '' : currentPrice.toFixed(pairData.maxQuoteDigits);
 
     var quoteCurrency = pairData.quote.toUpperCase();
 
@@ -447,8 +461,8 @@ export default class Renderer {
           <div class="col">
               <div class="progress">
                   <div class="progress-bar bg-secondary" role="progressbar" style="width: ${widthSafety.toFixed(4)}%" aria-valuenow="${widthSafety.toFixed(4)}" aria-valuemin="0" aria-valuemax="100"></div>
-                  <div class="progress-bar bg-danger text-start" role="progressbar" style="width: ${widthLoss.toFixed(4)}%; overflow:visible" aria-valuenow="${widthLoss.toFixed(4)}" aria-valuemin="0" aria-valuemax="100">${labelLoss !== '' ? labelLoss.toFixed(pairData.maxQuoteDigits) : ''}</div>
-                  <div class="progress-bar bg-success text-end" role="progressbar" style="width: ${widthProfit.toFixed(4)}%; overflow:visible" aria-valuenow="${widthProfit.toFixed(4)}" aria-valuemin="0" aria-valuemax="100">${labelProfit !== '' ? labelProfit.toFixed(pairData.maxQuoteDigits) : ''}</div>
+                  <div class="progress-bar bg-danger text-start" role="progressbar" style="width: ${widthLoss.toFixed(4)}%; overflow:visible" aria-valuenow="${widthLoss.toFixed(4)}" aria-valuemin="0" aria-valuemax="100">${labelLoss !== '' ? labelLoss : ''}</div>
+                  <div class="progress-bar bg-success text-end" role="progressbar" style="width: ${widthProfit.toFixed(4)}%; overflow:visible" aria-valuenow="${widthProfit.toFixed(4)}" aria-valuemin="0" aria-valuemax="100">${labelProfit !== '' ? labelProfit : ''}</div>
               </div>
           </div>
       </div>
@@ -461,16 +475,16 @@ export default class Renderer {
           </div>
       </div>
       <div class="row">
-        <p class="lead text-start ${nextClass}">Next safety order: buy ${nextBuyOrder.volume} ${pairData.base} @ ${nextBuyOrder.price.toFixed(2)} (${(nextBuyOrder.volume * nextBuyOrder.price).toFixed(2)} ${quoteCurrency})</p>
+        <p class="lead text-start ${nextClass}">Next safety order: buy ${nextBuyOrder.order.volume} ${pairData.base} @ ${nextBuyOrder.order.price.toFixed(2)} (${(nextBuyOrder.order.volume * nextBuyOrder.order.price).toFixed(2)} ${quoteCurrency})</p>
       </div>
       `;
 
     for (let i = 0; i < closedOrders.length; i++) {
-      let order = closedOrders[i];
-      if (order.status === 'open') continue;
+      let ecaOrder = closedOrders[i];
+      if (ecaOrder.status === 'open') continue;
       dealTemplate += `<div class="row">
         <div class="col text-start">
-          <span class="text-danger">${order.type}</span> ${order.side} <span class="text-info">${Number(order.volume).toFixed(4)}</span> @ <span class="text-info">${Number(order.price).toFixed(2)}  </span> (${(order.volume * order.price).toFixed(2)} ${quoteCurrency}) on ${Utils.toShortDateTime(order.closeDate)}
+          <span class="text-danger">${ecaOrder.order.type}</span> ${ecaOrder.order.side} <span class="text-info">${Number(ecaOrder.order.volume).toFixed(4)}</span> @ <span class="text-info">${Number(ecaOrder.order.price).toFixed(2)}  </span> (${(ecaOrder.order.volume * ecaOrder.order.price).toFixed(2)} ${quoteCurrency}) on ${Utils.toShortDateTime(ecaOrder.order.closeDate)}
         </div>
       </div>`;
     }

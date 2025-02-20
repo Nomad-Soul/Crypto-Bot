@@ -237,7 +237,10 @@ async function formatChart(dataset) {
       new Chart(document.getElementById(dataset.chartType), {
         type: 'bar',
         data: {
-          labels: Object.keys(botData).filter(month => months.includes(month.toLowerCase())),
+          labels: Object.keys(botData.aggregate).map(key => {
+            let label = key.split(' ');
+            return `${label[0]} ${months[label[1]]}`;
+          }),
           datasets: [
             {
               label: `${currencyLabels[0]} bought`,
@@ -245,7 +248,7 @@ async function formatChart(dataset) {
               type: 'bar',
               order: 1,
               fill: true,
-              data: Array.from(Object.values(botData)).map((entry) => entry.volume),
+              data: Array.from(Object.values(botData.aggregate)).map((entry) => entry.volume),
             },
             {
               label: `${currencyLabels[1]} paid`,
@@ -253,7 +256,7 @@ async function formatChart(dataset) {
               yAxisID: 'yQuote',
               order: 0,
               fill: true,
-              data: Array.from(Object.values(botData)).map((entry) => entry.volumeQuote),
+              data: Array.from(Object.values(botData.aggregate)).map((entry) => entry.volumeQuote),
             },
           ],
         },

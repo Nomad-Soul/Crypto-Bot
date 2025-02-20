@@ -38,6 +38,13 @@ export default class Utils {
     });
   }
 
+  static functionName() {
+    return new Error().stack?.split('\n')[2]?.trim().split(' ')[1];
+  }
+
+  static functionCaller() {
+    return new Error().stack?.split('\n')[3]?.trim().split(' ')[1];
+  }
   /**
    *
    * @param {Number} timeElapsed
@@ -74,5 +81,19 @@ export default class Utils {
   static getWeekYear(date) {
     date.setDate(date.getDate() + 3 - ((date.getDay() + 6) % 7));
     return date.getFullYear();
+  }
+
+  /**
+   *
+   * @param {any} unordered
+   * @returns {any}
+   */
+  static orderObjectByKeys(unordered) {
+    return Object.keys(unordered)
+      .sort()
+      .reduce((obj, key) => {
+        obj[key] = unordered[key];
+        return obj;
+      }, {});
   }
 }

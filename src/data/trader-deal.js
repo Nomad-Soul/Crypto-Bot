@@ -23,6 +23,9 @@ export default class TraderDeal {
   /** @type {ExchangeOrder[]} */
   #exchangeOrders;
 
+  /**
+   * @param {{id?: string, botId: string, buyOrders: string[], sellOrders: string[], index: Number, status: string, account: string, overrideAveragePrice?: Number}} data
+   */
   constructor(data) {
     this.id = data.id ?? `${data.account}:${nanoid(12)}`;
     this.botId = data.botId;
@@ -62,17 +65,9 @@ export default class TraderDeal {
    * @param {CryptoBot} bot
    * @returns
    */
-  async refreshExchangeOrders(bot) {
-    this.#exchangeOrders = await bot.getExchangeOrdersFromPlannedOrderIds(this.buyOrders, this.account, true);
-  }
-
-  /**
-   *
-   * @param {CryptoBot} bot
-   * @returns
-   */
   fetchExchangeOrders(bot) {
-    this.#exchangeOrders = bot.getLocalExchangeOrdersFromPlannedOrderIds(this.buyOrders, this.account);
+    let client = bot.getClient(this.account);
+    this.#exchangeOrders = this.buyOrders.map((txid) => client.getLocalOrder(txid));
   }
   /**
    *
@@ -80,7 +75,8 @@ export default class TraderDeal {
    * @param {PairData} pairData
    */
   isCompleted(bot, pairData) {
-    var allSellOrdersExecuted = this.sellOrders.length > 0 && this.sellOrders.map((id) => bot.getPlannedOrder(id)).every((o) => o.isClosed);
+    let client = bot.getClient(this.account);
+    var allSellOrdersExecuted = this.sellOrders.length > 0 && this.sellOrders.map((id) => client.getLocalOrder(id)).every((o) => o.isClosed);
 
     var allBalanceSold = Math.abs(this.calculateTotalVolumeBought(bot) - this.calculateTotalVolumeSold(bot)) < pairData.minVolume;
 
@@ -112,10 +108,11 @@ export default class TraderDeal {
    * @returns
    */
   calculateCostBasis(bot) {
-    if (!this.#exchangeOrders) this.fetchExchangeOrders(bot);
-    var exchangeOrders = this.#exchangeOrders;
+    if (!this.#exchangeOrders) {
+      this.fetchExchangeOrders(bot);
+    }
 
-    var sumValue = exchangeOrders.reduce((sv, order) => {
+    var sumValue = this.#exchangeOrders.reduce((sv, order) => {
       if (typeof order === 'undefined') {
         App.warning(`Missing local order in deal ${this.id}`);
         return sv;
@@ -129,7 +126,14 @@ export default class TraderDeal {
     var averagePrice = sumValue / sumWeights;
     var costBasis = averagePrice * sumWeights;
 
-    if (typeof costBasis === 'undefined') App.error(`Undefined cost basis for deal ${this.id}`);
+    if (typeof costBasis === 'undefined' || isNaN(costBasis)) {
+      App.printObject(this.#exchangeOrders);
+      App.error(`Invalid cost basis for deal ${this.id}: ${costBasis}`);
+    }
+    if (typeof averagePrice === 'undefined' || isNaN(averagePrice)) {
+      App.printObject(this.#exchangeOrders);
+      App.error(`Invalid averagePrice for deal ${this.id}: ${averagePrice}`);
+    }
 
     return { averagePrice: averagePrice, costBasis: costBasis };
   }
@@ -141,10 +145,11 @@ export default class TraderDeal {
    */
   #sumVolume(bot, direction = 'buy') {
     var orders = direction === 'buy' ? this.buyOrders : this.sellOrders;
-    return this.orders.reduce((sumVolume, id) => {
-      let plannedOrder = bot.getPlannedOrder(id);
+    let client = bot.getClient(this.account);
+    return orders.reduce((sumVolume, id) => {
+      let plannedOrder = client.getLocalOrder(id);
       if (!plannedOrder.isClosed) return sumVolume;
-      let exchangeOrder = bot.getClient(this.account).getLocalOrder(plannedOrder.txid);
+      let exchangeOrder = client.getLocalOrder(plannedOrder.txid);
 
       sumVolume += Number(exchangeOrder.volume);
       return sumVolume;
@@ -155,7 +160,7 @@ export default class TraderDeal {
    *
    * @param {CryptoBot} bot
    * @param {BotSettings} botSettings
-   * @returns
+   * @returns { { averagePrice: Number, costBasis: Number, targetPrice: Number }}
    */
   calculateProfitTarget(bot, botSettings) {
     var { averagePrice, costBasis } = this.calculateCostBasis(bot);
@@ -181,13 +186,27 @@ export default class TraderDeal {
    */
   calculateProfit(bot) {
     var { averagePrice, costBasis } = this.calculateCostBasis(bot);
+    let client = bot.getClient(this.account);
     var profit = this.sellOrders.reduce((profit, id) => {
-      let order = bot.getLocalExchangeOrderFromPlannedOrderId(id, this.account);
+      let order = client.getLocalOrder(id);
       if (order.status === 'open') return profit;
       profit += order.volume * order.price - order.fees - costBasis;
       return profit;
     }, 0);
 
     return profit;
+  }
+
+  toJSON() {
+    return {
+      id: this.id,
+      status: this.status,
+      botId: this.botId,
+      account: this.account,
+      index: this.index,
+      buyOrders: this.buyOrders,
+      sellOrders: this.sellOrders,
+      overrideAveragePrice: this.overrideAveragePrice > 0 ? this.overrideAveragePrice : undefined,
+    };
   }
 }

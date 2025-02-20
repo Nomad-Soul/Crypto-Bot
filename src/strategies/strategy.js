@@ -1,5 +1,6 @@
 import { yellowBright, cyanBright, redBright, greenBright } from 'ansis';
 import App from '../app.js';
+import Utils from '../utils.js';
 import fs from 'fs';
 import CryptoBot from '../crypto-bot.js';
 import BotSettings from '../data/bot-settings.js';
@@ -14,7 +15,7 @@ export default class Strategy {
   /** @type {BotSettings} */
   botSettings;
   /** @type {ClientBase} */
-  accountClient;
+  client;
 
   /** @type {PairData} */
   pairData;
@@ -27,8 +28,8 @@ export default class Strategy {
 
   /** @type {Map<string, EcaOrder>} */
   #flags = new Map();
-
   strategyOrders = {};
+  #lastHistoryCheck;
 
   /**
    *
@@ -43,14 +44,15 @@ export default class Strategy {
     this.#bot = bot;
     this.botId = botId;
     this.botSettings = bot.getBotSettings(botId);
-    this.accountClient = this.#bot.getClient(this.botSettings.account);
-    this.pairData = this.accountClient.getPairData(this.botSettings.pair);
+    this.client = this.#bot.getClient(this.botSettings.account);
+    this.pairData = this.client.getPairData(this.botSettings.pair);
 
-    let path = `${App.DataPath}/${this.botSettings.account}/${this.botSettings.strategyType.replace('eca-', '')}-${this.botId.replace('/','-')}.json`;
+    let path = `${App.DataPath}/${this.botSettings.account}/${this.botSettings.strategyType.replace('eca-', '')}-${this.botId.replace('/', '-')}.json`;
     if (fs.existsSync(path)) {
       this.strategyOrders = App.readFileSync(path);
-    }
-    else {
+      this.#lastHistoryCheck = this.strategyOrders['lastCheck'];
+      delete this.strategyOrders['lastCheck'];
+    } else {
       this.rebuildHistory();
     }
   }
@@ -61,6 +63,10 @@ export default class Strategy {
 
   get flags() {
     return this.#flags.entries();
+  }
+
+  checkHistory() {
+    //if (c)
   }
 
   /**
@@ -114,23 +120,26 @@ export default class Strategy {
 
   /**
    *
-   * @returns
+   * @returns {Boolean}
    */
   hasActiveOrders() {
+    App.error(`${this.botSettings.fullId}: <${Utils.functionName()}> not implemented`);
     return false;
   }
 
   requiresNewPlannedOrder() {
-    return this.#bot.getPlannedOrders(this.botId).every((o) => o.isClosed);
+    return this.getPlannedOrders(this.botId).every((o) => o.isExecuted);
   }
 
   /**
    * @param {number} [volumeQuote]
+   * @param {string} balanceLabel
    */
-  balanceCheck(volumeQuote) {
-    if (typeof this.currentPrice === 'undefined') this.currentPrice = this.bot.getPrice(this.pairData.id);
+  balanceCheck(volumeQuote, balanceLabel = null) {
+    if (typeof this.currentPrice === 'undefined') this.currentPrice = this.client.getPrice(this.pairData.id);
     var accountClient = this.bot.getClient(this.botSettings.account);
-    var availableBalance = accountClient.getBalance(this.pairData.quote);
+    if (balanceLabel == null) balanceLabel = this.pairData.quote;
+    var availableBalance = accountClient.getBalance(balanceLabel);
     volumeQuote ??= this.botSettings.maxVolumeQuote;
     var balanceCheck = availableBalance >= volumeQuote;
 
@@ -160,21 +169,69 @@ export default class Strategy {
     return balanceCheck;
   }
 
-  volumeCheck(volume) {
-    var availableBalance = this.accountClient.getBalance(this.pairData.base);
+  /**
+   * @param {string} statusFilter
+   * @returns {EcaOrder[]}
+   */
+  getPlannedOrders(statusFilter = undefined) {
+    var data = [];
+    for (let [status, orders] of Object.entries(this.strategyOrders)) {
+      if (statusFilter !== undefined && statusFilter !== status) continue;
+      for (let orderTxid of orders) {
+        let order = this.client.getLocalOrder(orderTxid);
+        data.push(
+          new EcaOrder(
+            {
+              botId: this.botId,
+              account: this.client.id,
+              strategy: this.botSettings.strategyType,
+            },
+            order,
+          ),
+        );
+      }
+    }
+    return data;
+  }
+
+  /**
+   *
+   * @param {string} txid
+   * @returns {EcaOrder}
+   */
+  getPlannedOrder(txid) {
+    return new EcaOrder(
+      {
+        botId: this.botId,
+        account: this.client.id,
+        strategy: this.botSettings.strategyType,
+      },
+      this.client.getLocalOrder(txid),
+    );
+  }
+
+  /**
+   *
+   * @param {Number} volume
+   * @param {Boolean} alternate
+   * @returns {Boolean}
+   */
+  volumeCheck(volume, alternate = false) {
+    let volumeLabel = alternate ? this.botSettings.alternateBase : this.pairData.base;
+    var availableBalance = this.client.getBalance(volumeLabel);
     var volumeCheck = availableBalance >= volume;
     var colour = volumeCheck ? greenBright : redBright;
     this.logStatus(
-      `${this.pairData.id}: Requested ${yellowBright`${volume.toFixed(this.pairData.maxBaseDigits)}`} Available: ${colour`${availableBalance.toFixed(this.pairData.maxBaseDigits)} ${this.pairData.base}`}`,
+      `${this.pairData.id}: Requested ${yellowBright`${volume.toFixed(this.pairData.maxBaseDigits)}`} Available: ${colour`${availableBalance.toFixed(this.pairData.maxBaseDigits)} ${volumeLabel}`}`,
     );
     return volumeCheck;
   }
 
   decide() {
-    App.error(`${this.botSettings.strategyType}-${this.botSettings.id}: Not implemented`);
+    App.error(`${this.botSettings.fullId}: <${Utils.functionName()}> not implemented`);
   }
 
   rebuildHistory() {
-    App.warning(`${this.botSettings.strategyType}-${this.botSettings.id}: Not implemented`);
+    App.warning(`${this.botSettings.fullId}: <${Utils.functionName()}> not implemented`);
   }
 }

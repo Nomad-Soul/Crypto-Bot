@@ -21,7 +21,21 @@ export default class EcaStacker extends Strategy {
   lastOrder;
 
   /**
-   *
+   * @typedef {Object} StrategyOrders
+   * @property {string[]} executed
+   * @property {string[]} pending
+   * @property {string[]} planned
+   */
+
+  /** @type {import('../types.js').postExecutionCallback} */
+  #updateCallback = (response) => {
+    let order = response.order;
+    this.#findAndReplaceOrder(order.txid, EcaOrder.StatusFromExchangeOrder(order.status));
+    this.saveHistory();
+    return order;
+  };
+
+  /**
    * @param {CryptoBot} bot
    * @param {string} botId
    */
@@ -31,44 +45,79 @@ export default class EcaStacker extends Strategy {
 
     this.botSettings = bot.getBotSettings(botId);
     this.planner = new EcaPlanner(botId, this.botSettings);
+
+    if (!Object.hasOwn(this.strategyOrders, 'executed')) this.strategyOrders['executed'] = [];
+    if (!Object.hasOwn(this.strategyOrders, 'pending')) this.strategyOrders['pending'] = [];
+    if (!Object.hasOwn(this.strategyOrders, 'planned')) this.strategyOrders['planned'] = [];
   }
 
   /**
    *
-   * @returns
+   * @returns {Boolean}
    */
   hasActiveOrders() {
-    return this.bot.getPlannedOrders(this.botId).some((order) => {
+    return this.getPlannedOrders().some((order) => {
       return order.isScheduledForToday || order.isPastExecutionDate || order.isActive;
     });
   }
 
-  hasNoPlannedOrders() {
-    return this.bot.getPlannedOrders(this.botId).every((order) => order.isClosed);
+  /**
+   * @param {EcaOrder[]} plannedOrders
+   */
+  hasNoPlannedOrders(plannedOrders) {
+    return plannedOrders.every((order) => order.isExecuted);
+  }
+
+  /**
+   * @returns {Promise<boolean>}
+   */
+  async updatePendingOrders() {
+    var pendingTxids = this.strategyOrders.pending;
+    var update = false;
+
+    if (pendingTxids.length > 0) {
+      let pendingOrders = await this.client.requestOrdersByTxid(pendingTxids);
+      for (const order of pendingOrders) {
+        if (order.isClosed && this.strategyOrders.pending.includes(order.txid)) {
+          update = this.#findAndReplaceOrder(order.txid, 'executed');
+          if (update) App.log(`Order [${cyanBright`${order.txid}`}] status ${greenBright`updated`}`);
+          else App.error(`Update failed: ${order.txid}`);
+        }
+      }
+      return update;
+    }
+    return update;
   }
 
   async decide() {
-    this.dateNow = new Date(Date.now());
-    var accountClient = this.bot.getClient(this.botSettings.account);
-    var plannedOrders = this.bot.getPlannedOrders(this.botId);
-    this.currentPrice = this.bot.getPrice(this.pairData.id);
+    this.dateNow = new Date();
+    var client = this.bot.getClient(this.botSettings.account);
+    var plannedOrders = this.getPlannedOrders();
+    this.currentPrice = client.getPrice(this.pairData.id);
 
     this.statusMessages = [];
     this.actions = [];
 
+    if (await this.updatePendingOrders()) {
+      this.saveHistory();
+    }
+
     this.logStatus(`Processing [${cyanBright`${this.botId}`}]: ${this.botSettings.options.type}`, 'infoTimestamp');
     this.logStatus(
-      `Plan for ${yellowBright`${this.botId}`} has ${cyanBright`${plannedOrders.filter((o) => o.status === 'executed').length.toString()}`} executed orders, ${yellowBright`${plannedOrders.filter((o) => o.isPlanned).length.toString()}`} planned orders, ${yellowBright`${plannedOrders.filter((o) => o.isActive).length.toString()}`} pending orders`,
+      `Plan for ${yellowBright`${this.botId}`} has ${cyanBright`${this.strategyOrders.executed.length}`} executed orders, ${yellowBright`${this.strategyOrders.pending.length}`} pending orders, ${yellowBright`${this.strategyOrders.planned.length}`} planned orders`,
     );
-    this.lastOrder = plannedOrders.filter((o) => o.status === 'executed').at(-1);
+    this.lastOrder = plannedOrders
+      .filter((o) => o.status === 'executed')
+      .sort((a, b) => a.order.closeDate.getTime() - b.order.closeDate.getTime())
+      .at(-1);
 
-    if (plannedOrders.length == 0) {
-      return { botId: this.botId, status: `${this.botId}: no orders in plan.` };
+    if (this.botSettings.active && this.hasNoPlannedOrders(plannedOrders)) {
+      if (!this.checkStatus(plannedOrders)) return { botId: this.botId, status: `${this.botId}: no orders in plan.` };
     }
 
     for (let i = 0; i < plannedOrders.length; i++) {
       let plannedOrder = plannedOrders[i];
-      let exchangeOrder = typeof plannedOrder.txid === 'undefined' ? null : await accountClient.getExchangeOrder(plannedOrder.txid);
+      let exchangeOrder = plannedOrder.order;
 
       if (plannedOrder.status === 'planned' && exchangeOrder == null) {
         this.processPlannedOrder(plannedOrder);
@@ -84,12 +133,11 @@ export default class EcaStacker extends Strategy {
       }
     }
 
-    if (this.botId === 'sol/eur') this.balanceCheck();
-    this.checkStatus(plannedOrders);
     this.checkDealFlags();
 
     var response;
-    if (this.actions.length > 0) response = this.bot.executeActions(this.actions);
+    //if (this.actions.length > 0) response = this.client.executeActions(this.actions);
+    App.printObject(this.actions);
 
     this.lastResult = { botId: this.botId, flags: Object.keys(Object.fromEntries(this.flags)), status: this.statusMessages.join('\n') };
 
@@ -110,10 +158,10 @@ export default class EcaStacker extends Strategy {
       firstOrder = true;
     } else if (this.lastOrder.status === 'executed') {
       hoursElapsed = this.lastOrder.hoursElapsed(this.dateNow);
-      invalidHoursElapsed = this.lastOrder.closeDate.getFullYear() === 1970;
+      invalidHoursElapsed = this.lastOrder.order.closeDate.getFullYear() === 1970;
     } else if (this.lastOrder.status === 'planned') {
       hoursElapsed = this.lastOrder.hoursElapsed(this.dateNow, false);
-      invalidHoursElapsed = this.lastOrder.openDate.getFullYear() === 1970;
+      invalidHoursElapsed = this.lastOrder.order.openDate.getFullYear() === 1970;
     }
 
     if (invalidHoursElapsed || isNaN(hoursElapsed)) {
@@ -121,23 +169,23 @@ export default class EcaStacker extends Strategy {
       App.printObject(this.lastOrder);
       App.error(`${this.botId}: invalid hours elapsed: ${hoursElapsed}`);
     } else {
-      if (!firstOrder)
+      if (firstOrder) this.logStatus(`This is the first order`);
+      else
         this.logStatus(
           `${yellowBright`${Utils.timeToHoursOrDaysText(hoursElapsed)}`} have elapsed since last ${cyanBright`${this.pairData.base}`} order [${cyanBright`${this.lastOrder.id}`}]`,
         );
     }
 
-    if (plannedOrders.every((order) => order.isClosed)) {
+    if (plannedOrders.every((order) => order.isExecuted)) {
       if (this.botSettings.options.type === 'recurring') {
-        let ordersToday = this.bot
-          .getPlannedOrders(this.botId)
-          .filter((o) => Utils.toShortDate(new Date(o.closeDate)) === Utils.toShortDate(new Date(Date.now()))).length;
+        let ordersToday = this.getPlannedOrders().filter(
+          (o) => Utils.toShortDate(new Date(o.order.closeDate)) === Utils.toShortDate(new Date(Date.now())),
+        ).length;
 
         if (ordersToday > 0) App.log(`Today ${cyanBright`${ordersToday.toString()}`} orders for ${cyanBright`${this.botId}`} were executed`);
         if (ordersToday >= this.botSettings.options.maxOrdersPerDay) requiresNewPlannedOrder = false;
       } else if (this.botSettings.options.type === 'monthly') {
-        let ordersThisMonth = this.bot.getPlannedOrders(this.botId).filter((o) => o.closeDate.getMonth() == this.dateNow.getMonth()).length;
-        if (ordersThisMonth >= 1) {
+        if (this.countOrdersInMonth(plannedOrders) >= 1) {
           App.warning(`${this.botId}: plan already executed for this month`);
           requiresNewPlannedOrder = true;
         }
@@ -147,14 +195,27 @@ export default class EcaStacker extends Strategy {
     } else requiresNewPlannedOrder = false;
 
     this.logStatus(`[${cyanBright`${this.botId}`}] ${requiresNewPlannedOrder ? greenBright`requires` : redBright`does not require`} a new order`);
+
     if (requiresNewPlannedOrder) {
-      var orders = this.planner.proposeNext(plannedOrders);
+      var orders = this.planner.proposeNext(this.lastOrder);
       var newPlannedOrder = orders.pop();
       this.logStatus(`New planned order ${newPlannedOrder.toString()}`);
       this.setFlag({ requiresNewPlannedOrder }, newPlannedOrder);
-      this.bot.addPlannedOrders([newPlannedOrder]);
-      this.bot.updatePlanSchedule();
     }
+
+    return requiresNewPlannedOrder;
+  }
+
+  /**
+   *
+   * @param {EcaOrder[]} plannedOrders
+   * @returns {Number}
+   */
+  countOrdersInMonth(plannedOrders) {
+    var thisYear = this.dateNow.getFullYear();
+    var thisMonth = this.dateNow.getMonth();
+    var ordersThisMonth = plannedOrders.filter((o) => o.order.closeDate.getMonth() == thisMonth && o.order.closeDate.getFullYear() == thisYear);
+    return ordersThisMonth.length;
   }
 
   checkDealFlags() {
@@ -164,11 +225,14 @@ export default class EcaStacker extends Strategy {
 
       switch (key) {
         case 'submitPlannedBuyOrder':
+          break;
+
         case 'requiresNewPlannedOrder':
+          this.strategyOrders.planned.push(order);
           break;
 
         case 'replacePendingOrder':
-          if (this.accountClient.hasLocalExchangeOrder(order.txid)) this.actions.push(Action.CancelAction(order));
+          this.actions.push(this.replaceAction(order));
           break;
 
         default:
@@ -212,16 +276,16 @@ export default class EcaStacker extends Strategy {
 
     this.logStatus(`Processing planned order ${plannedOrder.id}`);
     var hoursElapsed = plannedOrder.hoursElapsed(this.dateNow, false);
-    var submitPlannedBuyOrder = this.dateNow > plannedOrder.openDate;
+    var submitPlannedBuyOrder = this.dateNow > plannedOrder.order.openDate;
 
     if (submitPlannedBuyOrder) {
-      if (isNaN(hoursElapsed)) App.error(`Invalid time delta: ${plannedOrder.openDate} - ${hoursElapsed}`);
+      if (isNaN(hoursElapsed)) App.error(`Invalid time delta: ${plannedOrder.order.openDate} - ${hoursElapsed}`);
       let message = `[${cyanBright`${plannedOrder.id}`}] needs to be executed ${yellowBright`${Utils.timeToHoursOrDaysText(hoursElapsed)}`} past.`;
       this.logStatus(message);
       this.setFlag({ submitPlannedBuyOrder }, plannedOrder);
     } else {
       this.logStatus(
-        `[${this.botId}] No actions need to be taken now. Next action in: ${yellowBright`${Utils.timeToHoursOrDaysText(hoursElapsed)}`} (${yellowBright`${Utils.toShortDate(plannedOrder.openDate)}`} ${Utils.toShortTime(plannedOrder.openDate)})`,
+        `[${this.botId}] No actions need to be taken now. Next action in: ${yellowBright`${Utils.timeToHoursOrDaysText(hoursElapsed)}`} (${yellowBright`${Utils.toShortDate(plannedOrder.order.openDate)}`} ${Utils.toShortTime(plannedOrder.order.openDate)})`,
       );
       this.balanceCheck();
     }
@@ -234,9 +298,9 @@ export default class EcaStacker extends Strategy {
   processPendingOrder(plannedOrder) {
     this.logStatus(yellowBright`[${plannedOrder.id}] still pending at ${Utils.toShortTime(this.dateNow)}`);
 
-    let waitDate = new Date(plannedOrder.openDate);
+    let waitDate = new Date(plannedOrder.order.openDate);
     waitDate.setHours(23, 29, 0);
-    if (waitDate.getFullYear() == 1970) App.error(`Wrong date: ${Utils.toShortDate(waitDate)} - plan.date: ${plannedOrder.openDate}`);
+    if (waitDate.getFullYear() == 1970) App.error(`Wrong date: ${Utils.toShortDate(waitDate)} - plan.date: ${plannedOrder.order.openDate}`);
 
     this.logStatus(`${greenBright`Waiting`} until ${Utils.toShortDate(waitDate)} ${yellowBright`${Utils.toShortTime(waitDate)}`}`);
 
@@ -244,7 +308,7 @@ export default class EcaStacker extends Strategy {
 
     if (replacePendingOrder) {
       this.logStatus('Pending order can be executed');
-      plannedOrder.type = 'market';
+      plannedOrder.order.type = 'market';
       this.setFlag({ replacePendingOrder }, plannedOrder);
     }
   }
@@ -268,60 +332,84 @@ export default class EcaStacker extends Strategy {
 
     if (currentPrice > maxPrice) {
       App.log(yellowBright`[${plannedOrder.id}]: above max price, setting limit to ${redBright`${maxPrice}`}`);
-      action = this.limitBuyAction(plannedOrder, currentPrice, test);
-    } else action = this.marketBuyAction(plannedOrder, currentPrice, test);
+      action = this.limitBuyAction(plannedOrder, currentPrice);
+    } else action = this.marketBuyAction(plannedOrder, currentPrice);
 
     App.log(`Order planned for today or past due? ${yellowBright`${plannedOrder.isScheduledForToday || plannedOrder.isPastExecutionDate ? 'yes' : 'no'}`}`);
-
-    console.log(action);
     return action;
   }
 
   /**
    *
-   * @param {EcaOrder} order
+   * @param {EcaOrder} ecaOrder
    * @param {Number} currentPrice
    * @param {boolean} isTest
    * @returns {Action}
    */
-  marketBuyAction(order, currentPrice, isTest = true) {
-    order.type = EcaOrder.OrderTypes.market;
-    order.volume = Number(order.volumeQuote / currentPrice);
-    if (order.volume < this.pairData.minVolume) order.volume = this.pairData.minVolume;
+  marketBuyAction(ecaOrder, currentPrice, isTest = true) {
+    ecaOrder.order.type = EcaOrder.OrderTypes.market;
+    ecaOrder.order.volume = Number(ecaOrder.volumeQuote / currentPrice);
+    if (ecaOrder.order.volume < this.pairData.minVolume) ecaOrder.order.volume = this.pairData.minVolume;
 
-    order.direction = 'buy';
+    ecaOrder.order.side = 'buy';
+    ecaOrder.order.price = this.client.getPrice(ecaOrder.order.pair);
 
-    return Action.MarketAction(order, this.pairData);
+    return Action.MarketAction(ecaOrder, this.pairData, this.#updateCallback);
   }
 
   /**
    *
-   * @param {EcaOrder} order
+   * @param {EcaOrder} ecaOrder
    * @param {Number} currentPrice
    * @param {boolean} isTest
    * @returns
    */
-  limitBuyAction(order, currentPrice, isTest = true) {
+  limitBuyAction(ecaOrder, currentPrice, isTest = true) {
     const maxPrice = this.botSettings.maxPrice;
 
-    order.type = EcaOrder.OrderTypes.limit;
+    ecaOrder.order.type = EcaOrder.OrderTypes.limit;
 
     if (currentPrice > maxPrice) {
-      order.price = maxPrice;
+      ecaOrder.order.price = maxPrice;
     }
 
-    order.volume = Number(order.volumeQuote / currentPrice);
+    ecaOrder.order.volume = Number(ecaOrder.volumeQuote / currentPrice);
 
     App.log(
-      `Cost: ${order.volumeQuote.toFixed(this.pairData.maxQuoteDigits)} Price: ${currentPrice.toFixed(this.pairData.maxQuoteDigits)} -> Volume: ${order.volume.toFixed(this.pairData.maxBaseDigits)}`,
+      `Cost: ${ecaOrder.volumeQuote.toFixed(this.pairData.maxQuoteDigits)} Price: ${currentPrice.toFixed(this.pairData.maxQuoteDigits)} -> Volume: ${ecaOrder.order.volume.toFixed(this.pairData.maxBaseDigits)}`,
     );
 
-    if (order.volume < this.pairData.minVolume) {
-      order.volume = this.pairData.minVolume;
+    if (ecaOrder.order.volume < this.pairData.minVolume) {
+      ecaOrder.order.volume = this.pairData.minVolume;
     }
 
-    order.volumeQuote = order.volume * currentPrice;
-    return Action.LimitAction(order, this.pairData);
+    ecaOrder.volumeQuote = ecaOrder.order.volume * currentPrice;
+    return Action.LimitAction(ecaOrder, this.pairData, this.#updateCallback);
+  }
+
+  /**
+   *
+   * @param {EcaOrder} ecaOrder
+   */
+  replaceAction(ecaOrder) {
+    var currentPrice = this.client.getPrice(ecaOrder.order.pair);
+    ecaOrder.order.price = currentPrice;
+    ecaOrder.order.volume = this.botSettings.maxVolumeQuote / currentPrice;
+
+    var action = Action.ReplaceAction(
+      new EcaOrder(
+        {
+          botId: this.botId,
+          strategy: this.botSettings.strategyType,
+          volumeQuote: this.botSettings.maxVolumeQuote,
+          account: this.botSettings.account,
+        },
+        ecaOrder.order,
+      ),
+      this.pairData,
+      this.#updateCallback,
+    );
+    return action;
   }
 
   rebuildHistory(tolerance = 0.5) {
@@ -338,11 +426,11 @@ export default class EcaStacker extends Strategy {
 
     accountClient.orders.forEach((order) => {
       if (order.pair !== this.botSettings.pair) return;
-      if (order.cost >= lowerLimit && order.cost <= upperLimit) orders.push(order);
+      if ((order.isClosed && order.cost >= lowerLimit && order.cost <= upperLimit) || order.isOpen) orders.push(order);
       else {
         let txid = order.txid;
         let cost = order.cost;
-        leftOutOrders.push({ txid: cost });
+        leftOutOrders.push({ [txid]: cost });
       }
     });
 
@@ -351,9 +439,39 @@ export default class EcaStacker extends Strategy {
 
     App.printObject(leftOutOrders);
 
+    /** @type {StrategyOrders} */
     var result = Object.groupBy(orders, ({ status }) => EcaOrder.StatusFromExchangeOrder(status));
     Object.entries(result).forEach(([k, array]) => (result[k] = array.map((order) => order.txid)));
+    result['lastCheck'] = new Date().toISOString();
     let filename = this.botId.replace('/', '-');
-    App.writeFile(`${App.DataPath}/${accountClient.type}/stacker-${filename}`, result);
+    App.writeFile(`${App.DataPath}/${accountClient.type}/${this.botSettings.fileId}`, result);
+  }
+
+  saveHistory() {
+    App.log(greenBright`Updating ${this.botSettings.fileId}`);
+    this.strategyOrders['lastCheck'] = new Date().toISOString();
+    App.writeFile(`${App.DataPath}/${this.botSettings.account}/${this.botSettings.fileId}`, this.strategyOrders);
+  }
+
+  /**
+   *
+   * @param {string} txid
+   * @param {string} toArray
+   * @returns {Boolean}
+   */
+  #findAndReplaceOrder(txid, toArray) {
+    var data = Object.entries(this.strategyOrders);
+    var found = false;
+    for (const [type, orders] of data) {
+      if (orders.constructor !== Array) continue;
+
+      let index = orders.indexOf(txid);
+      orders.splice(index, 1);
+      found = true;
+    }
+
+    if (found) this.strategyOrders[toArray].push(txid);
+
+    return found;
   }
 }

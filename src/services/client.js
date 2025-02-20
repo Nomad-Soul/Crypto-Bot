@@ -1,4 +1,5 @@
 import App from '../app.js';
+import Utils from '../utils.js';
 import fs from 'fs';
 import { cyanBright, greenBright, magentaBright, redBright, yellowBright } from 'ansis';
 import BotSettings from '../data/bot-settings.js';
@@ -22,6 +23,11 @@ export default class ClientBase {
 
   /** @type {boolean} */
   #updateLocalOrders;
+  /** @type {Promise<any>} */
+  pricePromise;
+
+  /** @type {Promise<[string, number][]>} */
+  balancePromise;
 
   /**
    * @type {Map<string, ExchangeOrder>}
@@ -52,7 +58,7 @@ export default class ClientBase {
     this.type = accountSettings.type;
     this.watchBalance = accountSettings.watchBalance;
     this.active = accountSettings.active;
-    this.historyStartYear = accountSettings.historyStartYear ?? new Date().getFullYear()-5;
+    this.historyStartYear = accountSettings.historyStartYear ?? new Date().getFullYear() - 5;
 
     if (!fs.existsSync(`${App.DataPath}/${this.id}/`)) {
       App.log(greenBright`Created data path for ${this.id}`);
@@ -78,41 +84,53 @@ export default class ClientBase {
   }
 
   /**
-   * 
-   * @param {string} pair 
-   * @param {Number} price 
+   *
+   * @param {string} pair
+   * @param {Number} price
    */
   setPrice(pair, price) {
     this.prices.set(pair, Number(price));
   }
 
   /**
-     * 
-     * @param {string} pair 
-     * @returns {Number}
-     */
+   *
+   * @param {string} pair
+   * @returns {Number}
+   */
   getPrice(pair) {
     let price = this.prices.get(pair);
-  
     if (typeof price === 'undefined') {
       let message = `Price for ${pair} not found`;
-      App.printObject(this.prices);
-      App.error(message);
+      App.warning(message);
+      return undefined;
     }
     return price;
+  }
+
+  /**
+   *
+   * @param {string} pair
+   * @returns {Promise<number>}
+   */
+  async getPriceAsync(pair) {
+    let price = this.getPrice(pair);
+    if (price === undefined) {
+      await this.requestTickers([pair.toUpperCase()]).then((data) => this.updateTickers(data));
+      return this.getPrice(pair);
+    } else return price;
   }
 
   updateTickers(data) {
     for (const entry of data) {
       for (const [key, price] of Object.entries(entry)) {
         App.log(`-> ${key}: ${price}`);
-        let pair  = key.toLowerCase().replace(/[-]/g, '/');
+        let pair = key.toLowerCase().replace(/[-]/g, '/');
         pair = PairData.Get(pair);
         this.setPrice(pair, Number(price));
       }
     }
+    this.pricePromise = null;
   }
-  
 
   /**
    *
@@ -138,7 +156,7 @@ export default class ClientBase {
    * @returns {Promise<any>}
    */
   async submitOrder(action) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
   }
 
   /**
@@ -147,9 +165,13 @@ export default class ClientBase {
    * @returns {Promise<any>}
    */
   async editOrder(action) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
   }
 
+  /**
+   *
+   * @returns {Boolean}
+   */
   hasKeys() {
     return typeof this.apiPublicKey != 'undefined' || typeof this.apiPrivateKey != 'undefined';
   }
@@ -160,14 +182,20 @@ export default class ClientBase {
    * @returns {Promise<any>}
    */
   async cancelOrder(action) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
   }
 
   /**
    *
    * @param {string} currency
+   * @returns {Number}
    */
   getBalance(currency) {
+    if (!this.balances.has(currency)) {
+      App.printObject(this.balances);
+      App.error(`No balance found for ${currency}`);
+      return 0;
+    }
     return this.balances.get(currency);
   }
 
@@ -177,7 +205,7 @@ export default class ClientBase {
    * @returns {String}
    */
   getPairId(botSettings) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
     return undefined;
   }
 
@@ -188,7 +216,7 @@ export default class ClientBase {
    * @returns {Promise<{result: boolean, newStatus: string}>}
    */
   async checkPendingOrder(plannedOrder, exchangeOrder = null) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
     return { result: false, newStatus: undefined };
   }
 
@@ -198,7 +226,7 @@ export default class ClientBase {
    * @returns {Promise<any>}
    */
   async processAction(action) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
   }
 
   async loadOrders(file) {
@@ -206,15 +234,16 @@ export default class ClientBase {
       const path = `${App.DataPath}/${this.id}/${file}.json`;
       var data = App.readFileSync(path);
       let version = data['version'];
-      if (typeof(version) === 'undefined' || version !== ExchangeOrder.CurrentVersion)
+      if (typeof version === 'undefined' || version !== ExchangeOrder.CurrentVersion)
         App.error(`File: <${path}> has version: ${redBright`${version}`} expected: ${cyanBright`${ExchangeOrder.CurrentVersion}`}`);
 
       delete data['version'];
 
       let orderKeys = Object.keys(data);
-      orderKeys.forEach((entry) => { 
+      orderKeys.forEach((entry) => {
+        if (entry == 'version') return;
         var order = new ExchangeOrder(data[entry]);
-        this.setExchangeOrder(entry,  order);
+        this.setExchangeOrder(entry, order);
       });
       App.log(`Loaded ${yellowBright`${file}`}: ${yellowBright`${orderKeys.length.toString()}`} orders found`);
       this.updateLocalOrders = false;
@@ -229,22 +258,15 @@ export default class ClientBase {
    * @param {ExchangeOrder} order
    */
   setExchangeOrder(id, order) {
-    if (typeof(order) === 'undefined')
+    if (typeof order === 'undefined' || typeof order.txid === 'undefined') {
+      App.printObject(order);
       App.error(`Order [${id}] is not an Exchange Order`);
+    }
 
     if (!this.orders.has(id) || this.orders.get(id).status != order.status) {
       this.orders.set(id, order);
       this.updateLocalOrders = true;
-    }  
-  }
-
-  /**
-   *
-   * @param {string} orderId
-   * @returns {boolean}
-   */
-  hasLocalExchangeOrder(orderId) {
-    return this.orders.has(orderId);
+    }
   }
 
   /**
@@ -258,14 +280,14 @@ export default class ClientBase {
 
     let order = this.orders.get(orderId);
 
-    if (redownload || typeof(order)!=='object') {
+    if (redownload || typeof order !== 'object') {
       App.warning(`Requesting [${orderId}]`);
       order = await this.queryOrder(orderId);
       order = this.convertResponseToExchangeOrder(order, orderId);
       this.setExchangeOrder(orderId, order);
     }
 
-    if (typeof(order) !=='undefined' && (Array.isArray(order) || typeof(order[orderId]) !== 'undefined') ) {
+    if (typeof order !== 'undefined' && (Array.isArray(order) || typeof order[orderId] !== 'undefined')) {
       App.warning('Object format');
       App.printObject(order);
       order = order[orderId];
@@ -281,11 +303,10 @@ export default class ClientBase {
       // order = await this.queryOrder(orderId);
       // if (typeof order === 'undefined')
       //   App.error('Order still not found');
-      // else 
+      // else
       // {App.log('Order found after one attempt');}
       return null;
-    }
-    else {
+    } else {
       return order;
     }
   }
@@ -294,11 +315,20 @@ export default class ClientBase {
    * @param {string} orderId
    */
   getLocalOrder(orderId) {
-    if (!this.orders.has(orderId)) App.warning(`Order ${orderId} not available`);
+    if (!this.hasLocalOrder(orderId)) App.error(`Order ${orderId} not available`);
     else {
       var order = this.orders.get(orderId);
       return order;
-    } 
+    }
+  }
+
+  /**
+   *
+   * @param {string} orderId
+   * @returns {boolean}
+   */
+  hasLocalOrder(orderId) {
+    return this.orders.has(orderId);
   }
 
   /**
@@ -307,7 +337,7 @@ export default class ClientBase {
    * @returns {Promise<>}
    */
   async requestTickers(pairs) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
   }
 
   /**
@@ -315,21 +345,43 @@ export default class ClientBase {
    * @returns {Promise<[string, number][]>}
    */
   async requestBalance() {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
     return;
   }
 
   async requestPairList(saveToFile = true) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
+  }
+
+  /**
+   *
+   * @param {Action[]} actions
+   * @returns {Promise<ExchangeOrder[]|any>}
+   */
+  async executeActions(actions) {
+    App.error(`Function <${Utils.functionName()}> not implemented`);
   }
 
   /**
    * @param {any} response
-   * @param {string} orderId
    * @returns {ExchangeOrder}
    */
-  convertResponseToExchangeOrder(response, orderId) {
+  convertResponseToExchangeOrder(response) {
     return undefined;
+  }
+
+  async awaitPrices() {
+    if (this.pricePromise) {
+      await this.pricePromise;
+    }
+    return Promise.resolve();
+  }
+
+  async awaitBalances() {
+    if (this.balancePromise) {
+      await this.balancePromise;
+    }
+    return Promise.resolve();
   }
 
   /**
@@ -338,7 +390,7 @@ export default class ClientBase {
    * @returns {String}
    */
   getTxidFromResponse(response) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
     return undefined;
   }
 
@@ -348,7 +400,17 @@ export default class ClientBase {
    * @returns {Promise<>}
    */
   async queryOrder(txid) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
+  }
+
+  /**
+ *
+ * @param {string} txid
+   @returns {Promise<ExchangeOrder>}
+  */
+  async requestOrder(txid) {
+    App.error(`Function <${Utils.functionName()}> not implemented`);
+    return null;
   }
 
   /**
@@ -363,10 +425,11 @@ export default class ClientBase {
   /**
    *
    * @param {string[]} txidArray
-   * @returns {Promise<>}
+   * @returns {Promise<ExchangeOrder[]>}
    */
   async requestOrdersByTxid(txidArray) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
+    return null;
   }
 
   /**
@@ -376,13 +439,24 @@ export default class ClientBase {
    * @returns {Promise<>}
    */
   async requestOrders(status, options) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
+  }
+
+  /**
+   *
+   * @param {Number} startYear
+   * @param {string} status
+   */
+  async downloadAll(startYear, status) {
+    App.error(`Function <${Utils.functionName()}> not implemented`);
   }
 
   async loadPairList() {
     App.log(`Loading ${greenBright`${this.id}`} pair list`);
     var assets = App.readFileSync(`${App.DataPath}/exchanges/${this.type}-pairs.json`);
-    this.pairs = new Map(Object.entries(assets));
+    for (const [k, v] of Object.entries(assets)) {
+      this.pairs.set(k, new PairData(v));
+    }
   }
 
   /**
@@ -392,7 +466,7 @@ export default class ClientBase {
    * @returns {Promise<any[]>}
    */
   async requestOrdersByStatus(status, refresh = false) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
     return null;
   }
 
@@ -400,7 +474,7 @@ export default class ClientBase {
    *@param {import('ccxt').Order[]} orders
    */
   updateOrders(orders) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
   }
 
   // /**
@@ -408,15 +482,15 @@ export default class ClientBase {
   //    * @returns
   //    */
   // async downloadAllOrders(status='closed') {
-  //   App.error('Not implemented');
+  //   App.error(`Function <${Utils.functionName()}> not implemented`);
   // }
 
   /**
-   * @param {Number} startYear 
-   * @returns 
+   * @param {Number} startYear
+   * @returns
    */
   async rebuildHistory(startYear) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
   }
 
   archiveOrdersByYear(year) {
@@ -428,14 +502,12 @@ export default class ClientBase {
           data[id] = o;
           App.log(`Added order: ${id}`);
         }
-      }
-      catch(ex) {
+      } catch (ex) {
         App.printObject(o);
         throw ex;
       }
     });
-    if (Object.keys(data).length === 0)
-      App.warning(`[${this.id}]: No orders found for ${year}`);
+    if (Object.keys(data).length === 0) App.warning(`[${this.id}]: No orders found for ${year}`);
     else {
       this.saveOrdersToFile(`${this.id}-${year}-orders`, data);
     }
@@ -476,7 +548,7 @@ export default class ClientBase {
    * @returns {Promise<any[] | any>}
    */
   async requestEarnAllocations(filter, valueCurrency) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
   }
 
   /**
@@ -485,7 +557,7 @@ export default class ClientBase {
    * @param {number} amount
    */
   async deallocateFunds(id, amount) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
   }
   /**
    *
@@ -493,7 +565,7 @@ export default class ClientBase {
    * @returns {Object}
    */
   findExchangeOrderByRef(userref) {
-    App.error('not implemented');
+    App.error(`Function <${Utils.functionName()}> not implemented`);
   }
 
   /**
@@ -509,6 +581,6 @@ export default class ClientBase {
     data['version'] = ExchangeOrder.CurrentVersion;
 
     App.writeFile(`${App.DataPath}/${this.id}/${filename}`, data);
-    App.log(`Saved ${Object.keys(data).length-1} orders`);
+    App.log(`Saved ${Object.keys(data).length - 1} orders`);
   }
 }

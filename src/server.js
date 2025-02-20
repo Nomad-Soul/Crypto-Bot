@@ -9,7 +9,6 @@ import EcaTrader from './strategies/eca-trader.js';
 import TradeHistory from './strategies/trade-history.js';
 const __dirname = import.meta.dirname;
 
-App.log('Starting Crypto-Bot v1.0 by NomadSoul', false, magentaBright);
 var bot = new CryptoBot();
 process.env.TZ = bot.getLocalSettings().timezone;
 
@@ -22,13 +21,12 @@ server.use(express.json());
 server.use('/css', express.static(path.join(__dirname, '../node_modules/bootswatch/dist/darkly')));
 
 App.server = server.listen(port, () => {
-  
+  bot.init();
   (async () => {
     App.log(magentaBright`Crypto-Bot listening on port ${port.toString()}`, true);
     //await bot.rebuildHistory();
-    var result = await update();
+    var result = await bot.update();
   })();
-  
 });
 
 server.get('/api', async function (req, res) {
@@ -71,7 +69,7 @@ server.get('/api', async function (req, res) {
     case 'StartDeal': {
       let botId = req.query['botId'].toString();
       let botSettings = bot.getBotSettings(botId);
-      if (botSettings.strategyType === 'eca-trader') {
+      if (botSettings.strategyType === 'trader') {
         var trader = new EcaTrader(bot, botId);
         response = await trader.startDeal();
       }
@@ -83,10 +81,9 @@ server.get('/api', async function (req, res) {
       let groupBy = req.query['groupBy'].toString();
       let botSettings = bot.getBotSettings(botId);
 
-      if (botSettings.active && botSettings.strategyType === 'eca-trader') {
+      if (botSettings.active && botSettings.strategyType === 'trader') {
         var th = new TradeHistory(bot, botId);
-        await th.analyseOrders(bot.getClient('krakenBot'), botId, 
-          { verbose: true, redownload: true, saveTrades: true, saveDeals:false });
+        //await th.analyseOrders(bot.getClient('krakenBot'), botId, { verbose: true, redownload: false, saveTrades: true, saveDeals: true });
         response = { status: 'success', request: endpoint, data: th.calculatePnL(groupBy), chartType: 'traderBot', pair: bot.getBotSettings(botId).pair };
       } else response = { status: 'failed' };
       break;
@@ -108,16 +105,16 @@ server.get('/api', async function (req, res) {
         response = {
           status: 'success',
           request: 'endpoint',
-          html: `Bot ${botId} is not active.`
+          html: `Bot ${botId} is not active.`,
         };
-      }
-      else {
+      } else {
         let trader = new EcaTrader(bot, botId);
-        var dealResult = trader.dealPlanner.proposeDeal(bot.getPrice(botSettings.pair), 4);
+        var dealResult = trader.dealPlanner.proposeDeal(trader.client.getPrice(botSettings.pair), 4);
+        let html = (await renderer.renderOpenDeal(trader.getLatestOpenDeal())).html + renderer.renderPreview(botId, dealResult.orders).html;
         response = {
           status: 'success',
           request: endpoint,
-          html: renderer.renderOpenDeal(trader.getLatestOpenDeal()).html + renderer.renderPreview(botId, dealResult.orders).html,
+          html: html,
         };
       }
       break;
@@ -130,7 +127,7 @@ server.get('/api', async function (req, res) {
 
     case 'RebuildHistory': {
       await bot.rebuildHistory();
-      response = { status: 'success'};
+      response = { status: 'success' };
       break;
     }
 
@@ -164,7 +161,7 @@ server.post('/api', async function (req, res) {
 
 cron.schedule('*/30 * * * *', () => {
   try {
-    update().then( ()=> App.writeLog());
+    update().then(() => App.writeLog());
   } catch (error) {
     bot.telegramBot.log('Oh no!\n' + error);
     App.log(error);
@@ -183,12 +180,7 @@ async function stopServer() {
   process.exit();
 }
 
-async function update() {
-  var pricePromise = bot.updatePrices();
-  var syncPromise = bot.syncExchangeStatus();
-
-  return Promise.all([pricePromise, syncPromise]).then(() => bot.processPlans());  
-}
+async function update() {}
 
 function formatEndpoint(req) {
   let endpoint = `${req.query.endpoint}`;

@@ -1,4 +1,6 @@
 import BotSettings from './data/bot-settings.js';
+import EcaOrder from './data/eca-order.js';
+import ExchangeOrder from './data/exchange-order.js';
 /**
  * @typedef {Object} AccountSettings
  * @property {String} id
@@ -8,7 +10,11 @@ import BotSettings from './data/bot-settings.js';
  * @property {Number} makerFees
  * @property {Number} takerFees
  * @property {boolean} active
- * @property {Number} historyStartYear;
+ * @property {Number} historyStartYear
+ * @property { {botId: string}[]} showDealPreview
+ * @property { {botId: string, interval: Number, startDate : Date}} purchaseHistory
+ * @property { {botId: string}[]} stackingHistory
+ * @property { {botId: string, groupBy: String}[]} tradeBalance
  * @property {string[]} watchBalance;
  */
 
@@ -27,4 +33,11 @@ import BotSettings from './data/bot-settings.js';
  * @property {any[]} services
  * @property {string} locale
  * @property {Number} serverPort
+ * @property {string} lastClosedOrderCheck;
+ */
+
+/**
+ * @callback postExecutionCallback
+ * @param {{order: ExchangeOrder, result: Boolean}} response
+ * @returns {ExchangeOrder}
  */

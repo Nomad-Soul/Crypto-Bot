@@ -1,3 +1,4 @@
+import Utils from './utils.js';
 import { cyan, yellowBright, white, redBright, hex, gray } from 'ansis';
 import fs from 'fs';
 import TelegramCryptoBot from './services/telegram-bot.js';
@@ -70,8 +71,8 @@ export default class App {
   }
 
   static printObject(object, timestamp = true) {
+    this.error(Utils.functionCaller(), false);
     this.log(JSON.stringify(object, null, 2), timestamp, redBright);
-    this.error((new Error()).stack?.split('\n')[2]?.trim().split(' ')[1], false);
   }
 
   static getCallerName() {
@@ -175,6 +176,17 @@ export default class App {
       month: '2-digit',
       day: '2-digit',
       year: 'numeric',
+    });
+  }
+
+  static toDateTime(date) {
+    return date.toLocaleString(App.locale.id, {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
     });
   }
 }
