@@ -3,7 +3,7 @@ import { redBright, yellowBright, cyanBright, greenBright } from 'ansis';
 import WebSocket from 'ws';
 
 import Crypto from 'crypto';
-import App from '../app.js';
+import App from '../app/app.js';
 import ExchangeOrder from '../data/exchange-order.js';
 import ClientBase from './client.js';
 import PairData from '../data/pair-data.js';
@@ -21,9 +21,9 @@ export default class KrakenBot extends ClientBase {
   }
 
   #handleError(e, endPointName, apiEndpointFullURL) {
-    App.error(redBright`[${this.id}]: endpoint error ${endPointName}`, false);
-    App.printObject(e);
-    App.log(apiEndpointFullURL);
+    Terminal.error(redBright`[${this.id}]: endpoint error ${endPointName}`, false);
+    Terminal.printObject(e);
+    Terminal.log(apiEndpointFullURL);
     throw e;
   }
   /*
@@ -33,13 +33,13 @@ export default class KrakenBot extends ClientBase {
     const baseDomain = 'https://api.kraken.com';
     const publicPath = '/0/public/';
     const apiEndpointFullURL = baseDomain + publicPath + endPointName + '?' + inputParameters;
-    App.warning(apiEndpointFullURL);
+    Terminal.warning(apiEndpointFullURL);
     // @ts-ignore
     var jsonData = await axios.get(apiEndpointFullURL).catch((e) => this.#handleError(e, endPointName, apiEndpointFullURL));
 
     if (typeof jsonData !== 'undefined' && jsonData.data.error.length > 0) {
-      App.printObject(jsonData.data);
-      App.error(jsonData.data.error);
+      Terminal.printObject(jsonData.data);
+      Terminal.error(jsonData.data.error);
     }
     return jsonData.data.result;
   }
@@ -57,11 +57,11 @@ export default class KrakenBot extends ClientBase {
   async QueryPrivateEndpoint(endPointName, data) {
     if (!this.hasKeys()) {
       let message = `Missing public or private key for ${this.id}!`;
-      App.warning(message);
+      Terminal.warning(message);
       return null;
     }
 
-    if (typeof endPointName === 'undefined') App.error('Undefined endpoint');
+    if (typeof endPointName === 'undefined') Terminal.error('Undefined endpoint');
 
     const baseDomain = 'https://api.kraken.com';
     const privatePath = '/0/private/';
@@ -85,11 +85,11 @@ export default class KrakenBot extends ClientBase {
     let jsonData = await axios.post(apiEndpointFullURL, apiPostBodyData, httpOptions).catch((e) => this.#handleError(e, endPointName, apiEndpointFullURL));
 
     if (typeof jsonData !== 'undefined' && jsonData.data.error.length > 0) {
-      App.error(redBright`[${this.id}]: api endpoint error ${endPointName}`, false);
-      App.log(jsonData.data.error, false, redBright);
-      App.log(apiEndpointFullURL);
-      App.printObject(data, false);
-      await App.rethrow(new Error(jsonData.data.error, { cause: 'ExchangeAPI' }));
+      Terminal.error(redBright`[${this.id}]: api endpoint error ${endPointName}`, false);
+      Terminal.log(jsonData.data.error, false, redBright);
+      Terminal.log(apiEndpointFullURL);
+      Terminal.printObject(data, false);
+      await Terminal.rethrow(new Error(jsonData.data.error, { cause: 'ExchangeAPI' }));
     } else return jsonData.data.result;
   }
 
@@ -156,7 +156,7 @@ export default class KrakenBot extends ClientBase {
     if (!test) {
       return this.QueryPrivateEndpoint(endpoint, data);
     } else {
-      App.log(`${endpoint}/${new URLSearchParams(data).toString()}`, true);
+      Terminal.log(`${endpoint}/${new URLSearchParams(data).toString()}`, true);
       return { descr: { order: 'test' }, txid: ['XXXXXX-YYYYYY-ZZZZZZ'] };
     }
   }
@@ -168,7 +168,7 @@ export default class KrakenBot extends ClientBase {
    */
   async submitOrder(action) {
     var order = action.plannedOrder;
-    App.log(`[${order.id}]: submitting ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
+    Terminal.log(`[${order.id}]: submitting ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
     return this.queryPrivate(KrakenBot.ActionToKrakenOrder(action), action.isTest);
   }
 
@@ -179,8 +179,8 @@ export default class KrakenBot extends ClientBase {
    */
   async editOrder(action) {
     var order = action.plannedOrder;
-    App.log(`${greenBright`[${order.id}]: editing`} ${yellowBright`${order.txid}`} on ${order.account}`);
-    App.log(`Edited price: ${order.price} volume: ${order.volume}`);
+    Terminal.log(`${greenBright`[${order.id}]: editing`} ${yellowBright`${order.txid}`} on ${order.account}`);
+    Terminal.log(`Edited price: ${order.price} volume: ${order.volume}`);
     return this.queryPrivate({
       endpoint: 'EditOrder',
       txid: order.txid,
@@ -197,7 +197,7 @@ export default class KrakenBot extends ClientBase {
    */
   async cancelOrder(action) {
     var order = action.plannedOrder;
-    App.log(`${greenBright`[${order.id}]: cancelling`} ${yellowBright`${order.txid}`} on ${order.account}`);
+    Terminal.log(`${greenBright`[${order.id}]: cancelling`} ${yellowBright`${order.txid}`} on ${order.account}`);
     return this.queryPrivate({ endpoint: 'CancelOrder', txid: order.txid }, action.isTest);
   }
 
@@ -208,14 +208,14 @@ export default class KrakenBot extends ClientBase {
   async processAction(action) {
     var response = await this.executeAction(action);
     if (typeof response.error != 'undefined') {
-      App.log(redBright`Response follows:`, true);
-      App.printObject(response.error);
+      Terminal.log(redBright`Response follows:`, true);
+      Terminal.printObject(response.error);
       return response;
     } else {
-      App.log(greenBright`Response follows:`, true);
-      App.printObject(response);
+      Terminal.log(greenBright`Response follows:`, true);
+      Terminal.printObject(response);
     }
-    App.log(yellowBright`----- end -----`);
+    Terminal.log(yellowBright`----- end -----`);
     return response;
   }
 
@@ -228,16 +228,16 @@ export default class KrakenBot extends ClientBase {
       return this.pendingRequests.get(txid);
     }
 
-    App.log(greenBright`Downloading ${this.id} order ${yellowBright`${txid}`}`, true);
+    Terminal.log(greenBright`Downloading ${this.id} order ${yellowBright`${txid}`}`, true);
     var promise = this.queryPrivate(data, false, true).then((response) => {
       try {
         var order = Object.values(response)[0];
         order.txid = txid;
         return order;
       } catch (e) {
-        App.warning(`${this.id}/QueryPrivate response:`);
-        App.printObject(response, false);
-        App.error(e);
+        Terminal.warning(`${this.id}/QueryPrivate response:`);
+        Terminal.printObject(response, false);
+        Terminal.error(e);
       }
     });
 
@@ -258,11 +258,11 @@ export default class KrakenBot extends ClientBase {
     if (this.pendingRequests.has(txidString)) return this.pendingRequests.get(txidString);
 
     if (txidArray.some((txid) => !txid)) {
-      App.warning('Contains empty txid');
-      App.error(new Error().stack);
+      Terminal.warning('Contains empty txid');
+      Terminal.error(new Error().stack);
     }
 
-    App.log(greenBright`Downloading ${this.id} orders ${yellowBright`${txidArray.join(', ')}`}`, true);
+    Terminal.log(greenBright`Downloading ${this.id} orders ${yellowBright`${txidArray.join(', ')}`}`, true);
     var promise = this.queryPrivate(data, false, true).then((response) => {
       try {
         Object.entries(response).forEach(([txid, order]) => {
@@ -271,9 +271,9 @@ export default class KrakenBot extends ClientBase {
         });
         return response;
       } catch (e) {
-        App.warning(`${this.id}/QueryPrivate response:`);
-        App.printObject(response, false);
-        App.error(e);
+        Terminal.warning(`${this.id}/QueryPrivate response:`);
+        Terminal.printObject(response, false);
+        Terminal.error(e);
       }
     });
     this.pendingRequests.set(txidString, promise);
@@ -307,7 +307,7 @@ export default class KrakenBot extends ClientBase {
   }
 
   async requestPairList() {
-    App.log(greenBright`Requesting pair list for ${this.id}`);
+    Terminal.log(greenBright`Requesting pair list for ${this.id}`);
     var data = { endpoint: 'AssetPairs' };
     return this.queryPublic(data).then((response) => {
       Object.entries(response).forEach(([key, pairData]) => {
@@ -324,7 +324,7 @@ export default class KrakenBot extends ClientBase {
    * @param {string} status
    */
   async requestOrdersByStatus(status) {
-    App.log(`${cyanBright`Downloading`} ${this.id} ${status} orders`);
+    Terminal.log(`${cyanBright`Downloading`} ${this.id} ${status} orders`);
     return this.requestOrders(status).then(
       (response) =>
         new Promise((resolve, reject) => {
@@ -340,17 +340,17 @@ export default class KrakenBot extends ClientBase {
    * @returns
    */
   async downloadAllOrders(status) {
-    App.warning(`Downloading all ${status} orders from ${this.id}`);
+    Terminal.warning(`Downloading all ${status} orders from ${this.id}`);
     var orderCount = 0;
 
     return this.requestOrders(status).then((response) => {
       var promises = [];
       promises.push(new Promise((resolve, reject) => (this.updateOrders(response.closed, status, true) ? resolve(true) : reject(false))));
       orderCount = response.count - Object.keys(response.closed).length;
-      App.warning(`Total orders: ${response.count}, ${response.count - this.orders.size} missing from ${this.id}`);
+      Terminal.warning(`Total orders: ${response.count}, ${response.count - this.orders.size} missing from ${this.id}`);
       let requests = Math.ceil(orderCount / 50);
       for (let i = 1; i <= requests; i++) {
-        App.warning(`Submitting request ${yellowBright`${i.toString()}`} to ${this.id}`);
+        Terminal.warning(`Submitting request ${yellowBright`${i.toString()}`} to ${this.id}`);
 
         promises.push(
           this.requestOrders(status, { pagination: 50 * i }).then(
@@ -368,18 +368,18 @@ export default class KrakenBot extends ClientBase {
       try {
         var orderYear = new Date(o.opentm * 1000).getFullYear();
         if (orderYear === year) data[id] = o;
-        App.log(`Added order: ${id}`);
+        Terminal.log(`Added order: ${id}`);
       } catch (ex) {
-        App.printObject(o);
+        Terminal.printObject(o);
         throw ex;
       }
     });
-    if (data.length === 0) App.warning(`[${this.id}]: No orders found for ${year}`);
+    if (data.length === 0) Terminal.warning(`[${this.id}]: No orders found for ${year}`);
     this.saveOrdersToFile(`${this.id}-${year}-orders`, data);
   }
 
   async requestBalance() {
-    App.log(greenBright`Requesting balance from ${this.id}`);
+    Terminal.log(greenBright`Requesting balance from ${this.id}`);
     var data = {
       endpoint: 'Balance',
     };
@@ -400,7 +400,7 @@ export default class KrakenBot extends ClientBase {
    * @returns {Promise<>}
    */
   async requestTickers(pairs) {
-    App.log(greenBright`Updating prices from ${this.id}`);
+    Terminal.log(greenBright`Updating prices from ${this.id}`);
     var data = { endpoint: 'Ticker', pair: pairs.join(',') };
     var tickers = {};
     return this.queryPublic(data)
@@ -419,7 +419,7 @@ export default class KrakenBot extends ClientBase {
     if (typeof asset !== 'undefined') data.asset = asset;
     var response = await this.queryPrivate(data, false, false);
     if (typeof response.items !== 'undefined') {
-      App.log(`Received earn strategies for [${this.id}]`);
+      Terminal.log(`Received earn strategies for [${this.id}]`);
       console.log(response.items);
     }
   }
@@ -434,7 +434,7 @@ export default class KrakenBot extends ClientBase {
     var data = { endpoint: 'Earn/Allocations', converted_asset: valueCurrency.toUpperCase(), hide_zero_allocations: true };
     var response = await this.queryPrivate(data, false, false);
     if (typeof response.items !== 'undefined') {
-      App.log(`Received earn allocations for [${this.id}]`);
+      Terminal.log(`Received earn allocations for [${this.id}]`);
       if (typeof filter !== 'undefined') {
         var filtered = response.items.filter((item) => item.native_asset.toLowerCase() === filter);
         return filtered.map((item) => {
@@ -450,13 +450,13 @@ export default class KrakenBot extends ClientBase {
    * @param {number} amount
    */
   async deallocateFunds(id, amount) {
-    App.warning(`Requesting deallocation for ${id} of ${amount}`);
+    Terminal.warning(`Requesting deallocation for ${id} of ${amount}`);
     var data = { endpoint: 'Earn/Deallocate', strategy_id: id, amount: amount };
     var response = await this.queryPrivate(data, false, false);
-    if (response) App.warning('Deallocation submitted');
+    if (response) Terminal.warning('Deallocation submitted');
     else {
-      App.warning('Deallocation failed');
-      App.printObject(response);
+      Terminal.warning('Deallocation failed');
+      Terminal.printObject(response);
     }
   }
 
@@ -468,11 +468,11 @@ export default class KrakenBot extends ClientBase {
    */
   updateOrders(orders, status, overrideSave = false) {
     if (typeof orders === 'undefined') {
-      App.warning(`No ${this.id} ${status} orders received`);
+      Terminal.warning(`No ${this.id} ${status} orders received`);
       return false;
     }
     let statusOrders = Object.entries(orders);
-    App.log(`Received ${cyanBright`${statusOrders.length.toString()}`} ${status} orders from ${this.id} [${statusOrders.length.toString()}] total`);
+    Terminal.log(`Received ${cyanBright`${statusOrders.length.toString()}`} ${status} orders from ${this.id} [${statusOrders.length.toString()}] total`);
 
     statusOrders.forEach(([key, order]) => this.setExchangeOrder(key, KrakenBot.ConvertToExchangeOrder(order, key)));
 
@@ -488,7 +488,7 @@ export default class KrakenBot extends ClientBase {
     try {
       return [...this.orders.values()].find((order) => order.userref === userref);
     } catch (error) {
-      App.log(`Cannot find order for ${userref}`, true);
+      Terminal.log(`Cannot find order for ${userref}`, true);
     }
   }
 
@@ -533,7 +533,7 @@ export default class KrakenBot extends ClientBase {
       result = true;
       newStatus = plannedOrder.status;
     } else if (exchangeOrder.status === 'cancelled') {
-      App.printObject(exchangeOrder);
+      Terminal.printObject(exchangeOrder);
       plannedOrder.status = 'cancelled';
       plannedOrder.closeDate = exchangeOrder.closeDate;
       result = true;
@@ -584,7 +584,7 @@ export default class KrakenBot extends ClientBase {
         break;
 
       default:
-        App.log(`Unknown command ${action.command} // ${action.plannedOrder?.id}`);
+        Terminal.log(`Unknown command ${action.command} // ${action.plannedOrder?.id}`);
     }
 
     if (order.type === EcaOrder.OrderTypes.limit) {
@@ -598,9 +598,9 @@ export default class KrakenBot extends ClientBase {
     try {
       var type = txinfo.descr.ordertype;
     } catch (e) {
-      App.error(`[${orderId}]: Error in Kraken.ConvertToExchangeOrder`, false);
-      App.printObject(txinfo);
-      App.rethrow(e);
+      Terminal.error(`[${orderId}]: Error in Kraken.ConvertToExchangeOrder`, false);
+      Terminal.printObject(txinfo);
+      Terminal.rethrow(e);
     }
     return new ExchangeOrder({
       txid: orderId,
@@ -640,8 +640,8 @@ export default class KrakenBot extends ClientBase {
         minBaseDisplayDigits: pair.ordermin.toString().split('.')[1]?.length || 0,
       });
     } catch (e) {
-      App.printObject(pair);
-      App.rethrow(e);
+      Terminal.printObject(pair);
+      Terminal.rethrow(e);
     }
   }
 

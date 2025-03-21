@@ -1,7 +1,9 @@
-import App from '../app.js';
+import App from '../app/app.js';
 import Utils from '../utils.js';
 import { nanoid } from 'nanoid';
 import ExchangeOrder from './exchange-order.js';
+import { yellowBright, cyanBright, redBright, greenBright } from 'ansis';
+import Terminal from '../app/terminal.js';
 
 export default class EcaOrder {
   static counter = 0;
@@ -20,11 +22,11 @@ export default class EcaOrder {
 
   /**
    *
-   * @param {{botId: string, account: string, strategy: string, volumeQuote?: Number}} data
+   * @param {{id?:string, botId: string, account: string, strategy: string, volumeQuote?: Number}} data
    * @param {ExchangeOrder} order
    */
   constructor(data, order) {
-    this.id = order.txid ?? `${data.botId}:${nanoid(12)}`;
+    this.id = order.txid ?? data.id ?? `${data.botId}:${nanoid(12)}`;
     this.botId = data.botId;
     this.account = data.account ?? 'unknown';
     this.strategy = data.strategy;
@@ -47,8 +49,11 @@ export default class EcaOrder {
       case 'planned':
         return 'planned';
 
+      case 'cancelled':
+        return 'cancelled';
+
       default:
-        App.warning(`Unknown status: ${status}`);
+        Terminal.warning(`Unknown status: ${status}`);
         return status;
     }
   }
@@ -78,23 +83,23 @@ export default class EcaOrder {
     var order = this.order;
     try {
       if (order.status === 'planned') {
-        if (typeof this.volumeQuote === 'undefined' || this.volumeQuote === 0) App.error('Invalid order parameter: {volumeQuote}');
-      } else if (typeof order.volume === 'undefined' || order.volume === 0) App.error('Invalid order parameter: {volume}');
-      if (typeof order.type === 'undefined') App.error('Invalid order parameter: {type}');
-      if (typeof order.pair === 'undefined') throw App.error(`[${this.id}]: Invalid order parameter: {pair}`);
+        if (typeof this.volumeQuote === 'undefined' || this.volumeQuote === 0) Terminal.error('Invalid order parameter: {volumeQuote}');
+      } else if (typeof order.volume === 'undefined' || order.volume === 0) Terminal.error('Invalid order parameter: {volume}');
+      if (typeof order.type === 'undefined') Terminal.error('Invalid order parameter: {type}');
+      if (typeof order.pair === 'undefined') throw Terminal.error(`[${this.id}]: Invalid order parameter: {pair}`);
       switch (order.type) {
         case 'market':
           break;
 
         case 'limit':
-          if (typeof order.price === 'undefined' || order.price === 0) App.error('Invalid order parameter: {price}');
+          if (typeof order.price === 'undefined' || order.price === 0) Terminal.error('Invalid order parameter: {price}');
           break;
         default:
-          App.error('Invalid order type');
+          Terminal.error('Invalid order type');
       }
     } catch (e) {
-      App.printObject(this);
-      App.rethrow(e);
+      Terminal.printObject(this);
+      Terminal.rethrow(e);
     }
     return true;
   }
@@ -112,8 +117,10 @@ export default class EcaOrder {
   }
 
   get isScheduledForToday() {
-    var date1 = new Date(this.order.openDate).setHours(0, 0, 0, 0);
-    var date2 = new Date(Date.now()).setHours(0, 0, 0, 0);
+    var date1 = this.order.openDate.setHours(0, 0, 0, 0);
+    var date2 = new Date().setHours(0, 0, 0, 0);
+
+    Terminal.instance.log(`${this.isPlanned} ${date1 == date2}`);
     return this.isPlanned && date1 == date2;
   }
 
@@ -123,7 +130,8 @@ export default class EcaOrder {
   }
 
   toString() {
-    return `[${this.id}] ${this.order.type} ${this.order.side} order on ${this.account} open from ${Utils.toShortDateTime(this.order.openDate)}`;
+    var colorSide = this.order.side === 'buy' ? '^G' : '^R';
+    return `[^c${this.id}] ${this.order.type} ${colorSide}${this.order.side}^ order on ^C${this.account}^ open from ^Y${Utils.toShortDateTime(this.order.openDate)}`;
   }
 
   toJSON() {

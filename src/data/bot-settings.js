@@ -1,4 +1,4 @@
-import App from '../app.js';
+import App from '../app/app.js';
 
 export default class BotSettings {
   /** @type {string} */
@@ -13,6 +13,8 @@ export default class BotSettings {
   base;
   /** @type {string} */
   alternateBase;
+  /** @type {string?} */
+  alternateQuote;
   /** @type {string} */
   quote;
   /** @type {string} */
@@ -24,6 +26,7 @@ export default class BotSettings {
   minDisplayDigits = 4;
 
   badgeClass;
+  /** @type {import('../types.js').BotOptions} */
   options;
   userref;
 
@@ -34,6 +37,7 @@ export default class BotSettings {
       this.strategyType = data.strategy;
       this.base = data.base;
       this.alternateBase = data.alternateBase;
+      this.alternateQuote = data.alternateQuote;
       this.active = data.active ?? false;
       this.maxBaseDigits = data.maxBaseDigits;
       this.maxQuoteDigits = data.maxQuoteDigits;
@@ -47,7 +51,7 @@ export default class BotSettings {
       this.options = data.options;
       this.userref = data.userref;
     } catch (e) {
-      App.error(`[${this.id}]: ${e.message}`);
+      Terminal.error(`[${this.id}]: ${e.message}`);
     }
   }
 
@@ -66,6 +70,7 @@ export default class BotSettings {
       strategy: this.strategyType,
       base: this.base,
       alternateBase: this.alternateBase,
+      alternateQuote: this.alternateQuote,
       quote: this.quote,
       pair: this.pair,
       active: this.active ?? false,

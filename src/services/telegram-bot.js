@@ -11,7 +11,6 @@ export default class TelegramCryptoBot {
    * @param {string[]} messageArguments
    * @returns {string}
    */
-
   #onMessage;
 
   /**@type {TelegramCryptoBot} */
@@ -64,4 +63,30 @@ export default class TelegramCryptoBot {
   async log(message) {
     if (typeof this.#ownerId !== 'undefined' && this.#ownerId > 0) return this.sendMessage(this.#ownerId, message);
   }
+
+  // async handleMessages(message) {
+  //   var commandArguments = message.text.toLowerCase().split(' ');
+  //   const command = commandArguments[0];
+  //   const parameter = commandArguments[1];
+  //   switch (command) {
+  //     case 'status': {
+  //       if (!this.hasBot(parameter)) return this.telegramBot.log(`Bot ${parameter} not found`);
+  //       let botSettings = this.getBotSettings(parameter);
+  //       return this.telegramBot.log(botSettings.strategy?.lastResult?.status || 'none');
+  //     }
+
+  //     case 'next': {
+  //       let reports = this.getPlannedOrders('all')
+  //         .filter((o) => o.isScheduledForToday && !o.isClosed && Utils.toShortDate(o.openDate) === Utils.toShortDate(new Date(Date.now())))
+  //         .sort((a, b) => a.openDate.getTime() - b.openDate.getTime())
+  //         .map((o) => o.toString());
+
+  //       if (reports.length > 0) return this.telegramBot.log(reports.join('\n'));
+  //       else return this.telegramBot.log('No orders planned for today');
+  //     }
+
+  //     default:
+  //       return this.telegramBot.respond(message);
+  //   }
+  // }
 }

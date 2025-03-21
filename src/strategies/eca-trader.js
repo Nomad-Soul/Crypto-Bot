@@ -1,4 +1,4 @@
-import App from '../app.js';
+import App from '../app/app.js';
 import fs from 'fs';
 import Utils from '../utils.js';
 import Action from '../data/action.js';
@@ -9,6 +9,7 @@ import CryptoBot from '../crypto-bot.js';
 import EcaOrder from '../data/eca-order.js';
 import ExchangeOrder from '../data/exchange-order.js';
 import Strategy from './strategy.js';
+import Terminal from '../app/terminal.js';
 
 export default class EcaTrader extends Strategy {
   /**
@@ -36,10 +37,52 @@ export default class EcaTrader extends Strategy {
    * @param {TraderDeal[]} openDeals
    * @returns
    */
-  async checkDataIntegrity(openDeals) {
+  async updatePendingOrders(openDeals) {
+    var term = Terminal.instance;
+    term.log('Updating pending orders');
+
     // update all pending orders
-    for (const order of this.getPlannedOrders('pending')) {
-      await this.client.requestOrder(order.id);
+    var orders = openDeals.map((deal) => deal.orders).flat();
+
+    var pendingOrders = [];
+    try {
+      for (const txid of orders) {
+        if (!this.client.hasLocalOrder(txid)) {
+          pendingOrders.push(txid);
+        } else {
+          let exOrder = this.client.getLocalOrder(txid);
+          if (exOrder.isOpen) {
+            pendingOrders.push(txid);
+          }
+        }
+      }
+      if (pendingOrders.length > 0) await this.client.requestOrdersByTxid(pendingOrders);
+    } catch (ex) {
+      if (ex.name == 'ExchangeError') {
+        term.error(ex.message);
+        return;
+      }
+      term.error(`${pendingOrders.length} orders do not exist on ${this.botSettings.account}, recovering...`, false);
+      term.printObject(ex);
+      var txidToRemove = [];
+      for (const txid of pendingOrders) {
+        try {
+          term.warning(`Checking order ${txid}`);
+          await this.client.requestOrdersByTxid([txid]);
+        } catch (ex) {
+          txidToRemove.push(txid);
+          term.warning(`Order ${redBright`${txid}`} does not exist on ${this.client.id}`);
+        }
+      }
+      for (const deal of openDeals) {
+        for (const txid of txidToRemove) {
+          if (deal.hasOrder(txid)) {
+            deal.removeOrder(txid);
+          }
+        }
+      }
+
+      this.updateDeals();
     }
 
     if (openDeals.length == 0) {
@@ -48,22 +91,21 @@ export default class EcaTrader extends Strategy {
         return {
           botId: this.botId,
           requiresNewPlannedOrder: false,
-          reason: this.logStatus(
-            `Invalid state: non-zero ${this.pairData.base} balance found, likely a previous deal was not closed correctly.`,
-            'errorNonBlocking',
-          ),
+          reason: `Invalid state: non-zero ${this.pairData.base} balance found, likely a previous deal was not closed correctly.`,
         };
       } else return { botId: this.botId, requiresNewPlannedOrder: false, reason: this.logStatus('No active open deals.') };
     } else {
       // otherwise check that we have data about all orders in the deal
       let test = true;
       for (const deal of openDeals) {
-        for (const order of deal.orders) {
-          let found = this.client.hasLocalOrder(order);
+        for (const txid of deal.orders) {
+          let found = this.client.hasLocalOrder(txid);
           if (!found) {
-            App.warning(`Missing order ${redBright`${order}`}`);
-            await this.client.requestOrder(order);
+            term.warning(`Missing order ${redBright`${txid}`}`);
+            await this.client.requestOrder(txid);
           }
+          let order = this.client.getLocalOrder(txid);
+          if (order.isCancelled) deal.removeOrder(order.txid);
           test = test && found;
         }
       }
@@ -72,9 +114,9 @@ export default class EcaTrader extends Strategy {
 
   /**
    * @param {string} statusFilter
-   * @returns {EcaOrder[]}
+   * @returns {Promise<EcaOrder[]>}
    */
-  getPlannedOrders(statusFilter = undefined) {
+  async getPlannedOrders(statusFilter = undefined) {
     var orders = [];
     var openDeals = Array.from(this.deals.values()).filter((deal) => deal.status === 'open');
     for (const deal of openDeals) {
@@ -90,6 +132,10 @@ export default class EcaTrader extends Strategy {
   }
 
   async decide() {
+    var term = Terminal.instance;
+    term.log('\r\n');
+    term.warning(`--- [${this.botId}]: ${this.botSettings.strategyType} ---`);
+    term.setIndentString(' | ');
     this.dateNow = new Date(Date.now());
     await this.client.awaitPrices();
     await this.client.awaitBalances();
@@ -98,18 +144,19 @@ export default class EcaTrader extends Strategy {
     this.statusMessages = [];
     this.actions = [];
 
-    await this.checkDataIntegrity(openDeals);
+    await this.updatePendingOrders(openDeals);
 
     for (let i = 0; i < openDeals.length; i++) {
       this.clearFlags();
       var deal = openDeals[i];
-      this.logStatus(`Processing [${cyanBright`${this.botId}`}]: ${deal.id}`, 'infoTimestamp');
+      term.log(`Processing deal ^y${deal.id}`);
 
       var dealData = this.reportDealStatus(deal);
       var completed = this.#checkCompletion(deal);
 
       if (!completed) {
         var plannedOrders = deal.orders.map((id) => this.getPlannedOrder(id));
+
         for (let i = 0; i < plannedOrders.length; i++) {
           let plannedOrder = plannedOrders[i];
 
@@ -124,10 +171,10 @@ export default class EcaTrader extends Strategy {
           } else if (plannedOrder.status === 'executed' && exchangeOrder != null) {
             this.processExecutedOrder(plannedOrder, deal);
           }
-          //console.log(`${plannedOrder.id}: ${result.requiresNewPlannedOrder}`);
         }
+
         if (this.checkDealIntegrity(deal, dealData)) {
-          App.warning(`New orders planned for ${deal.id}`);
+          term.warning(`New orders planned for ${deal.id}`);
         }
       }
 
@@ -135,10 +182,18 @@ export default class EcaTrader extends Strategy {
     }
 
     var response;
-    if (this.actions.length > 0) response = await this.client.executeActions(this.actions);
-    App.printObject(this.actions);
+    if (this.actions.length > 0) {
+      for (const action of this.actions) {
+        response = await this.awaitConfirmation(action, (order) => {
+          term.warning(`What should I do with ${order.txid}?`);
+        });
+        //Terminal.prompt();
+      }
+    }
 
     this.lastResult = { botId: this.botId, flags: Object.keys(Object.fromEntries(this.flags)), status: this.statusMessages.join('\n') };
+    term.setIndent(0);
+    term.log('\r');
 
     return this.lastResult;
   }
@@ -148,6 +203,7 @@ export default class EcaTrader extends Strategy {
    * @param {TraderDeal} deal
    */
   checkDealFlags(deal) {
+    var term = Terminal.instance;
     var newOrder = true;
     /** @type {import('../types.js').postExecutionCallback} */
     var postExecutionCallback = null;
@@ -161,7 +217,7 @@ export default class EcaTrader extends Strategy {
           if (!orderValid) throw new Error(`${key}: Invalid Order`);
           postExecutionCallback = (response) => {
             deal.buyOrders.push(response.order.txid);
-            App.log(`Added ${response.order.txid} to ${deal.id} buy orders`);
+            term.log(`Added ${response.order.txid} to ${deal.id} buy orders`);
             this.updateDeals();
             return response.order;
           };
@@ -172,7 +228,7 @@ export default class EcaTrader extends Strategy {
           if (!orderValid) throw new Error(`${key}: Invalid Order`);
           postExecutionCallback = (response) => {
             deal.sellOrders.push(response.order.txid);
-            App.log(`Added ${response.order.txid} to ${deal.id} sell orders`);
+            term.log(`Added ${response.order.txid} to ${deal.id} sell orders`);
             this.updateDeals();
             return response.order;
           };
@@ -190,19 +246,12 @@ export default class EcaTrader extends Strategy {
 
           postExecutionCallback = (response) => {
             let order = response.order;
-            if (order.side === 'buy') {
-              delete deal.buyOrders[previousTxid];
-              deal.buyOrders.push(order.txid);
-            } else {
-              delete deal.sellOrders[previousTxid];
-              deal.sellOrders.push(order.txid);
-            }
-            App.log(`Replaced ${previousTxid} with ${order.txid}`);
-            this.updateDeals();
+            //term.log(`Replaced ${previousTxid} with ${order.txid}`);
+            //this.updateDeals();
+            Terminal.printObject(order);
             return order;
           };
 
-          App.warning(`Editing ${ecaOrder.id}`);
           this.actions.push(
             Action.ReplaceAction(
               new EcaOrder(
@@ -222,22 +271,37 @@ export default class EcaTrader extends Strategy {
           break;
 
         case 'cancelAllPendingOrders':
-          App.warning(`Cancelling all pending orders for deal ${deal.id}`);
+          term.warning(`Cancelling all pending orders for deal ${deal.id}`);
+          postExecutionCallback = (response) => {
+            if (response.result) {
+              deal.removeOrder(response.order.txid);
+              this.updateDeals();
+            }
+            return response.order;
+          };
           this.actions.push(
             ...deal.orders
               .map((id) => this.getPlannedOrder(id))
               .filter((order) => order.isActive)
-              .map((order) => Action.CancelAction(order)),
+              .map((order) => Action.CancelAction(order, postExecutionCallback)),
           );
           newOrder = false;
-          break;
+          continue;
 
         default:
-          App.warning(`Unrecognised flag: ${key}`);
+          term.warning(`Unrecognised flag: ${key}`);
           continue;
       }
-
-      if (newOrder && this.canSubmit(ecaOrder)) this.actions.push(Action.OrderToAction(ecaOrder, this.pairData, postExecutionCallback));
+      try {
+        if (newOrder && this.canSubmit(ecaOrder)) {
+          var action = Action.OrderToAction(ecaOrder, this.pairData, postExecutionCallback);
+          action.tradeId = deal.id;
+          this.actions.push(action);
+        }
+      } catch (ex) {
+        term.printObject(this.flags);
+        term.error(ex.message);
+      }
     }
   }
 
@@ -247,17 +311,18 @@ export default class EcaTrader extends Strategy {
    * @returns {import('../types.js').DealData}
    */
   reportDealStatus(deal) {
+    var term = Terminal.instance;
     if (deal.status != 'open') {
       this.logStatus(`No active orders for ${deal.id}`, 'warning');
     }
 
     var dealData = deal.calculateProfitTarget(this.bot, this.botSettings);
-    this.logStatus(yellowBright`Cost Basis: ${dealData.costBasis.toFixed(2)} Average Price: ${dealData.averagePrice.toFixed(this.pairData.maxQuoteDigits)}`);
-    var colour = this.currentPrice > dealData.targetPrice ? greenBright : redBright;
-    this.logStatus(
-      colour`Current price: ${this.currentPrice.toFixed(this.pairData.maxQuoteDigits)} Target: ${dealData.targetPrice.toFixed(this.pairData.maxQuoteDigits)} (${((100 * (this.currentPrice - dealData.targetPrice)) / dealData.targetPrice).toFixed(2)}%)`,
+    term.log(`Cost Basis: ^Y${dealData.costBasis.toFixed(2)}^: Average Price: ^Y${dealData.averageCost.toFixed(this.pairData.maxQuoteDigits)}`);
+    var colour = this.currentPrice > dealData.targetPrice ? '^G' : '^R';
+    var percentDistance = (100 * (this.currentPrice - dealData.targetPrice)) / dealData.targetPrice;
+    term.log(
+      `Current price: ${colour}${this.currentPrice.toFixed(this.pairData.maxQuoteDigits)}^: Target: ^G${dealData.targetPrice.toFixed(this.pairData.maxQuoteDigits)}^ (${colour}${percentDistance.toFixed(2)}%^:)`,
     );
-
     return dealData;
   }
 
@@ -270,11 +335,19 @@ export default class EcaTrader extends Strategy {
    * @param {import("../types.js").DealData} dealData
    */
   checkDealIntegrity(deal, dealData) {
+    var term = Terminal.instance;
     var ordersAdded = false;
     const removeCancelledOrders = (id, array) => {
       let idx = deal.buyOrders.indexOf(id);
       array.splice(idx, 1);
     };
+
+    var volumeAvailable = this.client.getBalance(this.pairData.base);
+    if (volumeAvailable == 0) volumeAvailable = this.client.getBalance(this.botSettings.alternateBase);
+
+    var quoteAvailable = this.client.getBalance(this.botSettings.quote);
+    //var alternateQuote = this.client.getBalance(this.botSettings.alternateQuote);
+    if (quoteAvailable == 0) quoteAvailable = this.client.getBalance(this.botSettings.alternateQuote);
 
     // check if there are open orders that have been cancelled
     deal.buyOrders.filter((id) => !this.client.hasLocalOrder(id)).forEach((id) => removeCancelledOrders(id, deal.buyOrders));
@@ -283,51 +356,75 @@ export default class EcaTrader extends Strategy {
     var safetyOrdersRemaining = this.botSettings.options.maxSafetyOrders + 1 - deal.buyOrders.length;
     // Check if more safety orders are needed
     if (safetyOrdersRemaining > 0) {
-      this.logStatus(`${safetyOrdersRemaining} more safety orders possible.`);
+      term.log(`${safetyOrdersRemaining} more safety orders possible.`);
       var plannedOrders = deal.buyOrders.map((id) => this.getPlannedOrder(id));
       var requiresSafetyOrder = plannedOrders.every((order) => order.isExecuted);
-      App.warning(`RSO: ${requiresSafetyOrder}`);
       if (requiresSafetyOrder) {
-        this.logStatus(`${cyanBright`${deal.id}`} requires a new limit buy order`, 'warning');
-        var plannedBuyOrder = this.dealPlanner.calculateSafetyOrder(deal);
+        term.log(`[^c${deal.id}^:]: requires a new limit buy order`);
+        var plannedBuyOrder = this.dealPlanner.proposeSafetyOrder(deal);
+
+        if (plannedBuyOrder.order.price > this.client.getPrice(plannedBuyOrder.order.pair)) {
+          term.printObject(dealData);
+          term.printObject(plannedBuyOrder);
+          term.error('Proposed buy price is higher than current price!');
+        }
+
         this.setFlag({ requiresSafetyOrder }, plannedBuyOrder);
         ordersAdded = true;
       } else {
         var plannedOrder = plannedOrders.find((o) => !o.isExecuted);
-        this.logStatus(
-          `${deal.id} ${yellowBright`already`} has a ${plannedOrder.status} ${plannedOrder.order.type} buy order: ${cyanBright`${plannedOrder.id}`}`,
-        );
+        term.log(`${deal.id} ^Yalready^: has a ${plannedOrder.status} ${plannedOrder.order.type} buy order: ^C${plannedOrder.id}`);
       }
-    } else App.warning('No more safety orders possible.');
+    } else {
+      var minQuoteDigits = Math.min(App.locale.minQuoteDigits, this.pairData.maxQuoteDigits);
+      term.warning('No more safety orders possible');
+      term.log(`Balance available: ^g${quoteAvailable.toFixed(minQuoteDigits)}`);
+    }
 
     // check if there is no take profit order
     var sellOrders = deal.sellOrders.map((id) => this.getPlannedOrder(id));
     var requiresTakeProfitOrder = !sellOrders.some((o) => o.status === 'pending');
     if (requiresTakeProfitOrder) {
-      App.warning('Missing sell order.');
+      term.log(`[^c${deal.id}^:]: requires a new limit sell order`);
       this.createTakeProfitOrder(deal, dealData);
       ordersAdded = true;
     } else {
       var sellOrder = sellOrders.find((o) => o.status === 'pending');
       // check if the take profit order needs to be adjusted
-      var volumeAvailable = this.client.getBalance(this.pairData.base);
-      if (volumeAvailable == 0) volumeAvailable = this.client.getBalance(this.botSettings.alternateBase);
-      var volumeMatch = Math.abs(sellOrder.order.volume - volumeAvailable) > this.pairData.epsilon;
-      var priceMatch = Math.abs(dealData.targetPrice - sellOrder.order.price) < 0.01;
+
+      var volumeDelta = Math.abs(sellOrder.order.volume - volumeAvailable);
+      var priceDelta = Math.abs(dealData.targetPrice - sellOrder.order.price);
+
+      var volumeMatch = volumeDelta <= this.botSettings.options.volumeUpdateThreshold * volumeAvailable;
+      var priceMatch = priceDelta <= 2 * this.pairData.precision.price;
       var updateTakeProfitOrder = !volumeMatch || !priceMatch;
+
+      if (dealData.targetPrice < this.client.getPrice(sellOrder.order.pair)) {
+        term.printObject(dealData);
+        term.printObject(sellOrder);
+        term.error('Proposed sell price is lower than current price!');
+      }
+
+      var labelVolume;
+      if (volumeMatch) {
+        if (volumeDelta <= 2 * this.pairData.precision.amount) {
+          labelVolume = `^Gmatches^:`;
+        } else if (volumeDelta <= 0.005 * volumeAvailable) {
+          labelVolume = `^ynerly matches^:`;
+        }
+      } else labelVolume = `^Rdoes not match^:`;
+
+      term.log(
+        `Current take profit order volume ${labelVolume} volume available: ^y${sellOrder.order.volume.toFixed(this.pairData.maxBaseDigits)}^:/^Y${volumeAvailable.toFixed(this.pairData.maxBaseDigits)}^:: ${volumeDelta.toFixed(this.pairData.maxBaseDigits)} < ${this.botSettings.options.volumeUpdateThreshold * 100}%`,
+      );
+      term.log(
+        `Current take profit order price ${priceMatch ? `^Gmatches^:` : `^Rdoes not match`} proposed target price: ^g${sellOrder.order.price.toFixed(this.pairData.maxQuoteDigits)}^:/^G${dealData.targetPrice.toFixed(this.pairData.maxQuoteDigits)}^:: ${priceDelta.toFixed(this.pairData.maxQuoteDigits)}`,
+      );
+
       if (updateTakeProfitOrder) {
         this.editTakeProfitOrder(deal, sellOrder, volumeAvailable, dealData);
       }
-      App.log(
-        `Current take profit order volume ${volumeMatch ? `${greenBright`matches`}` : `${redBright`does not match`}`} volume available: ${sellOrder.order.volume.toFixed(this.pairData.maxBaseDigits)}/${volumeAvailable.toFixed(this.pairData.maxBaseDigits)}`,
-      );
-      App.log(
-        `Current take profit order price ${priceMatch ? `${greenBright`matches`}` : `${redBright`does not match`}`} proposed target price: ${sellOrder.order.price.toFixed(this.pairData.maxBaseDigits)}/${dealData.targetPrice.toFixed(this.pairData.maxBaseDigits)}`,
-      );
     }
-
-    App.warning(`requiresTPO: ${requiresTakeProfitOrder}`);
-
     return ordersAdded;
   }
 
@@ -336,8 +433,9 @@ export default class EcaTrader extends Strategy {
    * @param {TraderDeal} deal
    */
   #checkCompletion(deal) {
+    var term = Terminal.instance;
     if (deal.isCompleted(this.bot, this.pairData)) {
-      this.logStatus(greenBright`Profit: ${deal.calculateProfit(this.bot).toFixed(2)} ${this.botSettings.quote.toUpperCase()}`);
+      term.log(`^GProfit: ${deal.calculateProfit(this.bot).toFixed(2)} ${this.botSettings.quote.toUpperCase()}`);
       this.setFlag({ cancelAllPendingOrders }, null);
       deal.status = 'closed';
       this.updateDeals();
@@ -382,12 +480,8 @@ export default class EcaTrader extends Strategy {
    */
   editTakeProfitOrder(deal, sellOrder, volumeAvailable, dealData) {
     var editTakeProfitOrder = true;
-    App.log(
-      `Order volume: ${yellowBright`${sellOrder.order.volume.toFixed(this.pairData.maxBaseDigits)}`} Available: ${yellowBright`${volumeAvailable.toFixed(this.pairData.maxBaseDigits)}`}`,
-    );
-
     sellOrder.order.price = Number(dealData.targetPrice.toFixed(this.pairData.maxQuoteDigits));
-    sellOrder.order.volume = +(volumeAvailable - this.pairData.epsilon).toFixed(this.pairData.maxBaseDigits);
+    sellOrder.order.volume = +(volumeAvailable - this.pairData.precision.amount).toFixed(this.pairData.maxBaseDigits);
     this.setFlag({ editTakeProfitOrder }, sellOrder);
   }
 
@@ -421,10 +515,10 @@ export default class EcaTrader extends Strategy {
    */
   processExecutedOrder(plannedOrder, deal) {
     try {
-      let message = `[${cyanBright`${plannedOrder.id}`}] ${plannedOrder.order.type} ${plannedOrder.order.side} order ${greenBright`was filled`} on ${Utils.toShortDate(plannedOrder.order.closeDate)} ${Utils.toShortTime(plannedOrder.order.closeDate)}`;
+      let message = `[^c${plannedOrder.id}^:] ${plannedOrder.order.toString(this.pairData)} was ^gfilled^: on ^y${Utils.toShortDate(plannedOrder.order.closeDate)} ${Utils.toShortTime(plannedOrder.order.closeDate)}`;
       this.logStatus(message);
     } catch (e) {
-      App.warning(`${plannedOrder.id}`);
+      Terminal.instance.warning(`${plannedOrder.id}`);
     }
   }
 
@@ -433,11 +527,12 @@ export default class EcaTrader extends Strategy {
    * @param {EcaOrder} plannedOrder
    */
   processPlannedOrder(plannedOrder) {
+    var term = Terminal.instance;
     let order = plannedOrder.order;
-    App.log(`[${cyanBright`${plannedOrder.id}`}]: processing planned order`);
+    term.log(`[^C${plannedOrder.id}^:]: processing planned order`);
     if (this.dateNow > order.openDate) {
       let hoursElapsed = plannedOrder.hoursElapsed(this.dateNow, false);
-      if (isNaN(hoursElapsed)) App.error(`Invalid time delta: ${order.openDate} - ${hoursElapsed}`);
+      if (isNaN(hoursElapsed)) term.error(`Invalid time delta: ${order.openDate} - ${hoursElapsed}`);
       let message = `[${cyanBright`${plannedOrder.id}`}] needs to be executed ${yellowBright`${Utils.timeToHoursOrDaysText(hoursElapsed)}`} past.`;
       this.logStatus(message);
       var submitPlannedBuyOrder = order.side === 'buy';
@@ -458,7 +553,8 @@ export default class EcaTrader extends Strategy {
    */
   processPendingOrder(pendingOrder, deal) {
     let order = pendingOrder.order;
-    let message = `[${cyanBright`${pendingOrder.id}`}] ${order.type} ${order.side} order ${yellowBright`is still pending`} at ${Utils.toShortDateTime(this.dateNow)}`;
+    let colour = order.side === 'buy' ? '^r' : '^g';
+    let message = `[^c${pendingOrder.id}^:] ${order.toString(this.pairData)} is still ^ypending^`;
     this.logStatus(message);
   }
 
@@ -469,7 +565,7 @@ export default class EcaTrader extends Strategy {
   canSubmit(ecaOrder) {
     let order = ecaOrder.order;
     if (order.side === 'buy') {
-      var balanceCheck = this.balanceCheck(ecaOrder.volumeQuote);
+      var balanceCheck = this.balanceCheck(ecaOrder.volumeQuote + ecaOrder.order.fees);
       return balanceCheck && (ecaOrder.isScheduledForToday || ecaOrder.isPastExecutionDate);
     } else {
       var volumeCheck = this.volumeCheck(order.volume) || this.volumeCheck(order.volume, true);
@@ -478,26 +574,43 @@ export default class EcaTrader extends Strategy {
   }
 
   async startDeal() {
+    var term = Terminal.instance;
     var index = this.deals.size + 1;
     var proposedDeal = this.dealPlanner.proposeDeal(this.client.getPrice(this.pairData.id), 1, index);
     var balanceCheck = this.balanceCheck(proposedDeal.balanceRequired);
 
     var status = false;
+    /** @type {Action[]} */
     var actions = [];
     if (!balanceCheck) {
       status = await this.requestDeallocation(this.pairData.quote, proposedDeal.balanceRequired);
     } else {
+      this.deals.set(proposedDeal.deal.id, proposedDeal.deal);
+      var postExecutionCallback = (/** @type {{order: ExchangeOrder, action: Action, result: Boolean}} */ response) => {
+        let deal = this.deals.get(response.action.tradeId);
+        deal.buyOrders.push(response.order.txid);
+        term.log(`Added ${response.order.txid} to ${deal.id} buy orders`);
+        this.updateDeals();
+        return response.order;
+      };
       status = true;
       // Ignore sell order until the bot has actually bought something
       var buyOrders = proposedDeal.orders.filter((o) => o.order.side === 'buy');
-      actions = buyOrders.map((order) => Action.OrderToAction(order, this.pairData));
+      actions = buyOrders.map((order) => Action.OrderToAction(order, this.pairData, postExecutionCallback));
     }
 
     var result;
     if (actions.length > 0) {
-      result = await this.client.executeActions(actions);
-      this.deals.set(proposedDeal.deal.id, proposedDeal.deal);
-      this.updateDeals();
+      for (const action of actions) {
+        action.tradeId = proposedDeal.deal.id;
+        result = await this.awaitConfirmation(action, (order) => {
+          term.warning(`What should I do with ${order.txid}?`);
+        });
+        if (result) {
+          let index = proposedDeal.deal.buyOrders.indexOf(action.plannedOrder.id);
+          proposedDeal.deal.buyOrders.slice(index, 1);
+        }
+      }
     }
 
     return { status: status, actions: actions, result: result };
@@ -509,9 +622,10 @@ export default class EcaTrader extends Strategy {
    * @param {number} amount
    */
   async requestDeallocation(currency, amount) {
+    var term = Terminal.instance;
     var accountClient = this.bot.getClient(this.botSettings.account);
     var response = await accountClient.requestEarnAllocations(currency, this.bot.appCurrency);
-    App.log(response);
+    term.log(response);
 
     var allocation = response.find((item) => item.asset.toLowerCase() === currency);
 
@@ -519,13 +633,13 @@ export default class EcaTrader extends Strategy {
       var deallocationResponse = await accountClient.deallocateFunds(allocation.strategyId, amount);
       return true;
     } else {
-      this.logStatus(`Insufficient funds for deallocation: requested ${amount} available ${allocation.amount}`, 'warning');
+      term.warning(`Insufficient funds for deallocation: requested ${amount} available ${allocation.amount}`);
       return false;
     }
   }
 
   updateDeals() {
-    App.log(`Updating ${this.botSettings.fileId}-deals`);
+    Terminal.instance.log(`Updating ^Y${this.botSettings.fileId}-deals`);
     var data = {};
 
     for (let [key, value] of this.deals) {
@@ -536,18 +650,19 @@ export default class EcaTrader extends Strategy {
   }
 
   loadDeals() {
-    App.log(greenBright`Loading ${this.botSettings.fileId}-deals`);
+    var term = Terminal.instance;
+    term.log(`Loading ^C${this.botSettings.fileId}-deals`);
     const file = `${App.DataPath}/${this.botSettings.account}/${this.botSettings.fileId}-deals.json`;
     try {
       if (fs.existsSync(file)) {
         var data = App.readFileSync(file);
         this.deals = new Map(Object.keys(data).map((key) => [key, new TraderDeal(data[key])]));
       } else {
-        App.warning(`File <${file}> does not exist`);
+        term.warning(`File <${file}> does not exist`);
       }
     } catch (ex) {
-      App.error(file, false);
-      App.rethrow(ex);
+      term.error(file, false);
+      term.rethrow(ex);
     }
   }
 }

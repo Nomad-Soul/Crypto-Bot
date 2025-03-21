@@ -1,36 +1,35 @@
 import { yellowBright, cyanBright, redBright, greenBright, magentaBright } from 'ansis';
-import App from './app.js';
+import App from './app/app.js';
 import fs from 'fs';
-import EcaOrder from './data/eca-order.js';
-import KrakenClient from './services/kraken.js';
-import CoinbaseClient from './services/coinbase.js';
 import EcaStacker from './strategies/eca-stacker.js';
-import PairData from './data/pair-data.js';
 import BotSettings from './data/bot-settings.js';
 import ClientBase from './services/client.js';
-import Action from './data/action.js';
 import ExchangeOrder from './data/exchange-order.js';
 import EcaTrader from './strategies/eca-trader.js';
 import TelegramCryptoBot from './services/telegram-bot.js';
 import Strategy from './strategies/strategy.js';
 import Utils from './utils.js';
 import ExchangeClient from './services/exchange-client.js';
+import CoinMarketCapClient from './services/coinmarketcap.js';
+import Terminal from './app/terminal.js';
+import CommandLineInterface from './app/cli.js';
 
 export default class CryptoBot {
   /**
    * @type {import ('./types.js').Settings}
    */
   #settings = {};
-  // /**
-  //  * @type {Map<string, EcaOrder>}
-  //  */
-  //#plannedOrders = new Map();
+
+  /** @type {Object.<string, ClientBase>} */
   #clients = {};
   #activeBots = [];
+
   /**
-   * @type {TelegramCryptoBot}
+   * @type { {telegram?: TelegramCryptoBot, coinmarketcap?: CoinMarketCapClient, cli?: CommandLineInterface}}
    */
-  telegramBot;
+  #services = {};
+
+  coinmarketcapClient;
 
   /** @type {ExchangeClient} */
   ccxtClient;
@@ -39,8 +38,13 @@ export default class CryptoBot {
     this.loadSettings();
   }
 
-  init() {
-    App.log('Starting Crypto-Bot v1.0 by NomadSoul', false, magentaBright);
+  async init() {
+    this.#services['cli'] = new CommandLineInterface(this);
+    var term = new Terminal();
+    term.init(this);
+    await term.disableInput();
+
+    term.log('^MStarting Crypto-Bot v1.0 by NomadSoul', true);
     Object.keys(this.#settings.accounts).forEach((accountId) => {
       var accountSettings = this.getAccountSettings(accountId);
       accountSettings.id = accountId;
@@ -51,7 +55,7 @@ export default class CryptoBot {
           break;
 
         default:
-          App.error(`${accountId}: invalid exchange.`);
+          term.error(`${accountId}: invalid exchange.`);
           break;
       }
     });
@@ -59,12 +63,15 @@ export default class CryptoBot {
     Object.keys(this.#settings.services).forEach((serviceId) => {
       switch (serviceId) {
         case 'telegram': {
-          this.telegramBot = new TelegramCryptoBot(this.#settings.services.telegram);
-          this.telegramBot.onMessage(this.handleMessages.bind(this));
+          let telegramBot = new TelegramCryptoBot(this.#settings.services.telegram);
+          this.#services['telegram'] = telegramBot;
           break;
         }
+        case 'coinmarketcap':
+          this.coinmarketcapClient = new CoinMarketCapClient(this.#settings.services.coinmarketcap);
+          break;
         default:
-          App.error(`${serviceId}: invalid service.`);
+          term.error(`${serviceId}: invalid service.`);
           break;
       }
     });
@@ -80,23 +87,24 @@ export default class CryptoBot {
       }
       if (bot.active) this.#activeBots.push(bot.id);
     });
+    term.log(`^MCrypto-Bot listening on port ${this.getServerPort().toString()}`, true);
   }
 
-  async rebuildHistory(account = null, refresh = false) {
-    var promises = [];
-    var accountsToCheck = [];
+  // async rebuildHistory(account = null, refresh = false) {
+  //   var promises = [];
+  //   var accountsToCheck = [];
 
-    if (account === null) accountsToCheck = Object.entries(this.#clients);
-    else accountsToCheck.push([account, this.#clients[account]]);
+  //   if (account === null) accountsToCheck = Object.entries(this.#clients);
+  //   else accountsToCheck.push([account, this.#clients[account]]);
 
-    if (refresh) {
-      // Download all orders
-      accountsToCheck.forEach((/** @type {[string, ClientBase]} */ [key, client]) => {
-        promises.push(client.rebuildHistory());
-      });
-    }
-    return this.recoverDeals();
-  }
+  //   if (refresh) {
+  //     // Download all orders
+  //     accountsToCheck.forEach((/** @type {[string, ClientBase]} */ [key, client]) => {
+  //       promises.push(client.rebuildHistory());
+  //     });
+  //   }
+  //   return this.recoverDeals();
+  // }
 
   /**
    * @returns {string}
@@ -119,6 +127,15 @@ export default class CryptoBot {
     });
 
     return data;
+  }
+
+  getAccounts() {
+    return Object.keys(this.#clients);
+  }
+
+  getAvailableExchanges() {
+    var exchanges = [...new Set(Object.values(this.#clients).map((client) => client.type))];
+    return exchanges;
   }
 
   getLocalSettings() {
@@ -151,7 +168,7 @@ export default class CryptoBot {
    */
   getClient(accountId) {
     var accountClient = this.#clients[accountId];
-    if (typeof accountClient === 'undefined') App.error(`Unknown account ${accountId}`);
+    if (typeof accountClient === 'undefined') Terminal.error(`Unknown account ${accountId}`);
     return accountClient;
   }
 
@@ -159,9 +176,9 @@ export default class CryptoBot {
    * @param {string} accountId
    * @returns {boolean}
    */
-  hasActiveClient(accountId) {
+  hasClient(accountId) {
     var accountClient = this.#clients[accountId];
-    if (typeof accountClient === 'undefined' || !accountClient.active) return false;
+    if (typeof accountClient === 'undefined') return false;
     else return true;
   }
 
@@ -178,7 +195,7 @@ export default class CryptoBot {
   //  * @param {EcaOrder[]} orders
   //  */
   // addPlannedOrders(orders) {
-  //   if (typeof orders === 'undefined') App.error('Attempted to add empty EcaOrder');
+  //   if (typeof orders === 'undefined') Terminal.error('Attempted to add empty EcaOrder');
   //   orders.forEach((order) => this.setPlannedOrder(order.id, order));
   // }
 
@@ -187,7 +204,7 @@ export default class CryptoBot {
   //  * @param {EcaOrder} order
   //  */
   // deletePlannedOrder(order) {
-  //   if (typeof order === 'undefined' || !this.hasPlannedOrder(order.id)) App.error('Attempted to remove unknown EcaOrder');
+  //   if (typeof order === 'undefined' || !this.hasPlannedOrder(order.id)) Terminal.error('Attempted to remove unknown EcaOrder');
   //   this.#plannedOrders.delete(order.id);
   // }
 
@@ -197,7 +214,9 @@ export default class CryptoBot {
    * @returns
    */
   async downloadOrders(account = null) {
+    var term = Terminal.instance;
     var promises = [];
+
     /** @type {[string, ClientBase][]} */
     var accountsToCheck = [];
     if (account === null) accountsToCheck = Object.entries(this.#clients);
@@ -206,8 +225,26 @@ export default class CryptoBot {
     accountsToCheck
       .filter(([key, client]) => client.active)
       .forEach(([key, client]) => {
-        promises.push(client.requestOrdersByStatus('open', true).then(() => (this.#settings.lastOpenOrderCheck = new Date(Date.now()))));
-        promises.push(client.requestOrdersByStatus('closed', true).then(() => (this.#settings.lastClosedOrderCheck = new Date(Date.now()))));
+        var dateNow = new Date();
+        var deltaTime = Math.abs(client.lastClosedOrdersCheck.getTime() - dateNow.getTime()) / 3600000;
+        if (isNaN(deltaTime) || deltaTime > 5) {
+          term.log(
+            `^C${client.id}^:: orders last checked: ^y${isNaN(deltaTime) ? 'never' : `${deltaTime.toFixed(2)} minutes ago `}^ --> ^Yupdating^ now`,
+            true,
+          );
+          promises.push(
+            client.requestOrdersByStatus('open', true).then(() => {
+              client.lastOpenOrdersCheck = new Date();
+              this.#settings.accounts[client.id].lastOpenOrdersCheck = client.lastOpenOrdersCheck;
+            }),
+          );
+          promises.push(
+            client.requestOrdersByStatus('closed', true).then(() => {
+              client.lastClosedOrdersCheck = new Date();
+              this.#settings.accounts[client.id].lastClosedOrdersCheck = client.lastClosedOrdersCheck;
+            }),
+          );
+        } else term.log(`^C${client.id}^:: orders last checked: ${deltaTime.toFixed(2)} minutes ago > proceeding`);
         promises.push(client.requestBalance());
       });
 
@@ -238,19 +275,19 @@ export default class CryptoBot {
     return Promise.allSettled(promises);
   }
 
-  listMissingLocalOrders() {
-    let data = this.getPlannedOrders('all');
-    var missingOrders = new Map();
-    Object.keys(this.#clients).forEach((account) => missingOrders.set(account, []));
-    var filtered = data
-      .filter((order) => order.status === 'executed' && this.hasActiveClient(order.account) && !this.getClient(order.account).hasLocalExchangeOrder(order.txid))
-      .forEach((order) => {
-        missingOrders.get(order.account).push(order.txid ?? order.id);
-        if (!order.txid) App.warning(`Order ${order.id} contains empty txid`);
-      });
+  // listMissingLocalOrders() {
+  //   let data = this.getPlannedOrders('all');
+  //   var missingOrders = new Map();
+  //   Object.keys(this.#clients).forEach((account) => missingOrders.set(account, []));
+  //   var filtered = data
+  //     .filter((order) => order.status === 'executed' && this.hasActiveClient(order.account) && !this.getClient(order.account).hasLocalExchangeOrder(order.txid))
+  //     .forEach((order) => {
+  //       missingOrders.get(order.account).push(order.txid ?? order.id);
+  //       if (!order.txid) Terminal.warning(`Order ${order.id} contains empty txid`);
+  //     });
 
-    return missingOrders;
-  }
+  //   return missingOrders;
+  // }
 
   // /**
   //  *
@@ -291,7 +328,9 @@ export default class CryptoBot {
     var pricePromise = this.updatePrices();
     var syncPromise = this.syncExchangeStatus();
 
-    return Promise.all([pricePromise, syncPromise]).then(() => this.processPlans());
+    return Promise.all([pricePromise, syncPromise])
+      .then(() => this.processPlans())
+      .then(() => Terminal.instance.restoreInput());
   }
   // /**
   //  *
@@ -300,7 +339,7 @@ export default class CryptoBot {
   //  */
   // getPlannedOrder(id) {
   //   if (!this.#plannedOrders.has(id)) {
-  //     App.warning(`Planned order ${id} not found`);
+  //     Terminal.warning(`Planned order ${id} not found`);
   //     return null;
   //   }
 
@@ -386,7 +425,7 @@ export default class CryptoBot {
    */
   getBotSettings(botId) {
     let botSettings = this.#settings.bots;
-    if (typeof botId === 'undefined') App.error(`No settings found for ${botId}`);
+    if (typeof botId === 'undefined') Terminal.error(`No settings found for ${botId}`);
     else return botSettings[botId];
   }
 
@@ -407,7 +446,7 @@ export default class CryptoBot {
   // }
 
   // loadPlannedOrders() {
-  //   App.log('Loading planned orders');
+  //   Terminal.log('Loading planned orders');
   //   var data = App.readFileSync(`${App.DataPath}/crypto-bot-orders.json`);
   //   this.#plannedOrders = new Map(Object.keys(data).map((key) => [key, new EcaOrder(data[key])]));
   // }
@@ -416,14 +455,14 @@ export default class CryptoBot {
     const settingsFile = `${App.DataPath}/settings.json`;
 
     if (!fs.existsSync(settingsFile)) {
-      App.error(`No settings file found in ${App.DataPath}`);
+      Terminal.error(`No settings file found in ${App.DataPath}`);
     }
 
     this.#settings = App.readFileSync(settingsFile);
     this.#settings.bots = Object.fromEntries(Object.entries(this.#settings.bots).map(([botId, botData]) => [botId, new BotSettings(botId, botData)]));
 
     if (!fs.existsSync(`${App.DataPath}/exchanges/`)) {
-      App.log(greenBright`Created 'exchanges' folder`);
+      Terminal.log(greenBright`Created 'exchanges' folder`);
       fs.mkdirSync(`${App.DataPath}/exchanges`, 0o755);
     }
     if (typeof this.#settings.locale !== 'undefined') App.locale = this.#settings.locale;
@@ -442,8 +481,8 @@ export default class CryptoBot {
             dataFiltered[key] = order;
           }
         } catch (ex) {
-          App.printObject(order);
-          App.error(ex);
+          Terminal.printObject(order);
+          Terminal.error(ex);
         }
       }
       accountClient.saveOrdersToFile(`${accountClient.id}-current-orders`, dataFiltered);
@@ -455,12 +494,6 @@ export default class CryptoBot {
    */
   async syncExchangeStatus(account) {
     return this.downloadOrders(account).then((response) => {
-      // if (response) this.checkPendingOrders();
-      // var missingOrders = this.listMissingLocalOrders();
-      // for (const [exchange, txidArray] of missingOrders) {
-      //   if (txidArray.length > 0) this.getClient(exchange).requestOrdersByTxid(txidArray);
-      // }
-
       App.writeFile(`${App.DataPath}/settings`, this.#settings, (key, value) => {
         if (key === 'strategy' && value instanceof Strategy) {
           return value.botSettings.strategyType;
@@ -473,7 +506,7 @@ export default class CryptoBot {
   }
 
   // async checkPendingOrders() {
-  //   App.log(greenBright`Checking pending orders`, true);
+  //   Terminal.log(greenBright`Checking pending orders`, true);
   //   let pendingPlannedOrders = [...this.#plannedOrders.values()].filter((entry) => entry.status === 'pending');
   //   let updateFile = false;
 
@@ -489,12 +522,12 @@ export default class CryptoBot {
   //     let exchangeOrder = await accountClient.getExchangeOrder(plannedOrder.txid);
   //     let check = await accountClient.checkPendingOrder(plannedOrder, exchangeOrder);
 
-  //     App.log(`CPO: ${plannedOrder.id}`);
+  //     Terminal.log(`CPO: ${plannedOrder.id}`);
   //     if (check.result) {
   //       switch (check.newStatus) {
   //         case 'executed': {
   //           let message = `[${greenBright`${plannedOrder.id}`}]: order ${greenBright`filled`} at ${plannedOrder.closeDate.toLocaleTimeString(App.locale.id)} for ${Number(exchangeOrder.price).toFixed(2)} (${Number(exchangeOrder.cost).toFixed(2)} ${botSettings.quote})`;
-  //           App.log(message, true);
+  //           Terminal.log(message, true);
   //           this.telegramBot.log(message);
   //           updateFile = true;
   //           break;
@@ -502,14 +535,14 @@ export default class CryptoBot {
 
   //         case 'cancelled': {
   //           let message = `[${greenBright`${plannedOrder.id}`}]: order ${redBright`cancelled`} at ${plannedOrder.closeDate.toLocaleTimeString(App.locale.id)}`;
-  //           App.warning(message);
+  //           Terminal.warning(message);
   //           this.deletePlannedOrder(plannedOrder);
   //           updateFile = true;
   //           break;
   //         }
 
   //         default:
-  //           App.warning(`CPO: ${check.newStatus}`);
+  //           Terminal.warning(`CPO: ${check.newStatus}`);
   //       }
   //     }
   //   }
@@ -524,101 +557,91 @@ export default class CryptoBot {
   //   this.updatePlanSchedule();
   // }
 
-  /**
-   *
-   * @param {Action} action
-   * @returns {Promise<ExchangeOrder|any>}
-   */
-  async processAction(action) {
-    if (typeof action === 'undefined') throw new Error('Action is undefined');
+  // /**
+  //  *
+  //  * @param {Action} action
+  //  * @returns {Promise<ExchangeOrder|any>}
+  //  */
+  // async processAction(action) {
+  //   if (typeof action === 'undefined') throw new Error('Action is undefined');
 
-    var response;
-    var order = this.getPlannedOrder(action.plannedOrder.id);
-    if (typeof order === 'undefined') throw new Error(`Cannot find order in ${action.command}`);
-    var client = this.getClient(order.account);
-    response = await client.processAction(action);
+  //   var response;
+  //   var order = this.getPlannedOrder(action.plannedOrder.id);
+  //   if (typeof order === 'undefined') throw new Error(`Cannot find order in ${action.command}`);
+  //   var client = this.getClient(order.account);
+  //   response = await client.processAction(action);
 
-    if (typeof response === 'undefined') throw new Error(redBright`No response!`);
+  //   if (typeof response === 'undefined') throw new Error(redBright`No response!`);
 
-    switch (action.command) {
-      case 'editOrder':
-      case 'submitOrder': {
-        if (action.isTest) {
-          return;
-        }
+  //   switch (action.command) {
+  //     case 'editOrder':
+  //     case 'submitOrder': {
+  //       if (action.isTest) {
+  //         return;
+  //       }
 
-        App.warning('Process Action');
+  //       Terminal.warning('Process Action');
 
-        order.txid = client.getTxidFromResponse(response);
-        App.warning('Waiting 500 ms');
-        await new Promise((resolve) => setTimeout(resolve, 500));
+  //       order.txid = client.getTxidFromResponse(response);
+  //       Terminal.warning('Waiting 500 ms');
+  //       await new Promise((resolve) => setTimeout(resolve, 500));
 
-        let promise = new Promise((resolve) => resolve(client.updatePlannedOrder(order))).then((txinfo) => {
-          if (typeof txinfo === 'undefined') {
-            this.telegramBot.log(`Unexpected error when updating ${order.id}`);
-            return;
-          } else {
-            this.telegramBot.log(
-              `[${order.id}] submitted ${order.type} order ${order.direction} at ${txinfo.price} (${txinfo.cost.toFixed(2)} €) on ${order.account}`,
-            );
+  //       let promise = new Promise((resolve) => resolve(client.updatePlannedOrder(order))).then((txinfo) => {
+  //         if (typeof txinfo === 'undefined') {
+  //           this.telegramBot.log(`Unexpected error when updating ${order.id}`);
+  //           return;
+  //         } else {
+  //           this.telegramBot.log(
+  //             `[${order.id}] submitted ${order.type} order ${order.direction} at ${txinfo.price} (${txinfo.cost.toFixed(2)} €) on ${order.account}`,
+  //           );
 
-            if (txinfo.status === 'open') client.requestOrdersByStatus('open');
-            this.updatePlanSchedule();
-            return txinfo;
-          }
-        });
+  //           if (txinfo.status === 'open') client.requestOrdersByStatus('open');
+  //           this.updatePlanSchedule();
+  //           return txinfo;
+  //         }
+  //       });
 
-        return promise;
-      }
+  //       return promise;
+  //     }
 
-      case 'cancelOrder':
-        App.log(redBright`[${order.id}] cancelled ${order.account} order ${order.txid}`);
-        return response;
-    }
-  }
+  //     case 'cancelOrder':
+  //       Terminal.log(redBright`[${order.id}] cancelled ${order.account} order ${order.txid}`);
+  //       return response;
+  //   }
+  // }
 
-  async recoverDeals() {
-    Object.values(this.#settings.bots).forEach((botSettings) => {
-      switch (botSettings.strategyType) {
-        case 'stacker':
-          if (this.getClient(botSettings.account) && typeof botSettings.strategy === 'undefined') {
-            botSettings.strategy = new EcaStacker(this, botSettings.id);
-            botSettings.strategy.rebuildHistory();
-          }
-          break;
-      }
-    });
-  }
+  // async recoverDeals() {
+  //   Object.values(this.#settings.bots).forEach((botSettings) => {
+  //     switch (botSettings.strategyType) {
+  //       case 'stacker':
+  //         if (this.getClient(botSettings.account) && typeof botSettings.strategy === 'undefined') {
+  //           botSettings.strategy = new EcaStacker(this, botSettings.id);
+  //           botSettings.strategy.rebuildHistory();
+  //         }
+  //         break;
+  //     }
+  //   });
+  // }
 
   async processPlans() {
-    var dateNow = new Date(Date.now());
-    var dateLastCheck = new Date(this.#settings.lastClosedOrderCheck);
-    var deltaTime = Math.abs(dateLastCheck.getTime() - dateNow.getTime()) / 3600000;
+    var term = Terminal.instance;
 
-    if (deltaTime > 0.5) {
-      // Update closed orders
-      App.log(`Closed orders check: ${(deltaTime * 60).toFixed(2)} minutes ago > ${yellowBright`updating now`}`, true);
-      await this.syncExchangeStatus().then(() => App.log('Update complete.'));
-    } else App.log(`Last check: ${(deltaTime * 60).toFixed(2)} minutes ago > proceeding`);
-
-    var promises = [];
-
-    this.#activeBots.forEach((botId) => {
+    for (const botId of this.#activeBots) {
       var botSettings = this.getBotSettings(botId);
       if (botSettings == null) {
-        App.warning(`${botId}: invalid strategy`);
+        term.warning(`${botId}: invalid strategy`);
         return;
       }
 
       if (!this.getAccountSettings(botSettings.account).active) {
-        App.warning(`[${botId}]: account ${botSettings.account} is not active.`);
+        term.warning(`[${botId}]: account ${botSettings.account} is not active.`);
         return;
       }
 
       var shouldCheck = false;
       switch (botSettings.strategyType) {
         case 'stacker':
-          shouldCheck = botSettings.strategy.hasActiveOrders() || botSettings.strategy.requiresNewPlannedOrder();
+          shouldCheck = botSettings.strategy.hasActiveOrders();
           break;
         case 'trader':
           shouldCheck = botSettings.strategy.hasActiveOrders();
@@ -626,38 +649,21 @@ export default class CryptoBot {
       }
 
       if (shouldCheck) {
-        promises.push(botSettings.strategy.decide());
+        await botSettings.strategy.decide();
       } else {
-        App.warning(`${botId}: no active orders`);
+        term.warning(`${botId}: no active orders`);
       }
-    });
+    }
 
-    return Promise.all(promises);
+    return Promise.resolve();
   }
 
-  async handleMessages(message) {
-    var commandArguments = message.text.toLowerCase().split(' ');
-    const command = commandArguments[0];
-    const parameter = commandArguments[1];
-    switch (command) {
-      case 'status': {
-        if (!this.hasBot(parameter)) return this.telegramBot.log(`Bot ${parameter} not found`);
-        let botSettings = this.getBotSettings(parameter);
-        return this.telegramBot.log(botSettings.strategy?.lastResult?.status || 'none');
-      }
-
-      case 'next': {
-        let reports = this.getPlannedOrders('all')
-          .filter((o) => o.isScheduledForToday && !o.isClosed && Utils.toShortDate(o.openDate) === Utils.toShortDate(new Date(Date.now())))
-          .sort((a, b) => a.openDate.getTime() - b.openDate.getTime())
-          .map((o) => o.toString());
-
-        if (reports.length > 0) return this.telegramBot.log(reports.join('\n'));
-        else return this.telegramBot.log('No orders planned for today');
-      }
-
-      default:
-        return this.telegramBot.respond(message);
-    }
+  /**
+   *
+   * @param {string} serviceType
+   * @returns
+   */
+  getService(serviceType) {
+    return this.#services[serviceType];
   }
 }

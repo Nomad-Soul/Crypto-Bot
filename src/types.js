@@ -1,5 +1,5 @@
+import Action from './data/action.js';
 import BotSettings from './data/bot-settings.js';
-import EcaOrder from './data/eca-order.js';
 import ExchangeOrder from './data/exchange-order.js';
 /**
  * @typedef {Object} AccountSettings
@@ -16,11 +16,14 @@ import ExchangeOrder from './data/exchange-order.js';
  * @property { {botId: string}[]} stackingHistory
  * @property { {botId: string, groupBy: String}[]} tradeBalance
  * @property {string[]} watchBalance;
+ * @property {string} strategyType
+ * @property {string} lastClosedOrdersCheck;
+ * @property {string} lastOpenOrdersCheck;
  */
 
 /**
  * @typedef {Object} DealData
- * @property {number} averagePrice
+ * @property {number} averageCost
  * @property {number} costBasis
  * @property {number} targetPrice
  * }
@@ -30,14 +33,29 @@ import ExchangeOrder from './data/exchange-order.js';
  * @typedef {Object} Settings
  * @property {Object.<string, BotSettings>} bots
  * @property {AccountSettings[]} accounts
- * @property {any[]} services
- * @property {string} locale
+ * @property {{telegram?: any, coinmarketcap?: any}} services
+ * @property {{id: string, timezone: string, currency: string}} locale
  * @property {Number} serverPort
- * @property {string} lastClosedOrderCheck;
  */
 
 /**
  * @callback postExecutionCallback
- * @param {{order: ExchangeOrder, result: Boolean}} response
- * @returns {ExchangeOrder}
+ * @param {{order: ExchangeOrder, action: Action, result: Boolean}} response
+ */
+
+/**
+ * @typedef {Object} BotOptions
+ * @property {Number?} initialOrderSize
+ * @property {Number?} safetyOrder
+ * @property {Number?} maxSafetyOrders
+ * @property {Number?} priceDeviation
+ * @property {Number?} safetyOrderStepScale
+ * @property {Number?} safetyOrderVolumeScale
+ * @property {Number?} profitTarge
+ * @property {Number?} volumeUpdateThreshold
+ * @property {string?} type
+ * @property {Number?} maxOrdersPerDay
+ * @property {Number?} frequency
+ * @property {string?} option
+ * @property {Number?} day
  */

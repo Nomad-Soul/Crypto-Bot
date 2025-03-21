@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import axios from 'axios';
-import App from '../app.js';
+import App from '../app/app.js';
 import ClientBase from './client.js';
 import ExchangeOrder from '../data/exchange-order.js';
 import { redBright, yellowBright, cyanBright, greenBright } from 'ansis';
@@ -44,7 +44,7 @@ export default class CoinbaseClient extends ClientBase {
             currency: account.currency,
             available: account.available_balance.value,
           });
-          App.warning(`Id: ${account.currency}=${account.available_balance.value}`);
+          Terminal.warning(`Id: ${account.currency}=${account.available_balance.value}`);
           this.balances.set(PairData.GetAliasCurrency(account.currency), Number(account.available_balance.value));
         }),
       )
@@ -53,13 +53,13 @@ export default class CoinbaseClient extends ClientBase {
   }
 
   async requestBalance() {
-    App.log(greenBright`Requesting balance from ${this.id}`);
+    Terminal.log(greenBright`Requesting balance from ${this.id}`);
     await this.updateAccountList();
     return Object.fromEntries(this.balances);
   }
 
   async requestPairList() {
-    App.log(greenBright`Requesting pair list for ${this.id}`);
+    Terminal.log(greenBright`Requesting pair list for ${this.id}`);
     return this.submitRequest('products', 'GET', { limit: 500 }).then((r) => {
       r.data.products.forEach((p) => {
         let pair = `${p.base_currency_id.toLowerCase()}/${p.quote_currency_id.toLowerCase()}`;
@@ -76,9 +76,9 @@ export default class CoinbaseClient extends ClientBase {
    */
   async submitOrder(action) {
     var order = action.plannedOrder;
-    App.log(`[${order.id}]: submitting ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
+    Terminal.log(`[${order.id}]: submitting ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
     var data = CoinbaseClient.ActionToCoinbaseOrder(action);
-    App.printObject(data);
+    Terminal.printObject(data);
     return this.submitRequest('orders', 'POST', data);
   }
 
@@ -89,7 +89,7 @@ export default class CoinbaseClient extends ClientBase {
    */
   async cancelOrder(action) {
     var order = action.plannedOrder;
-    App.log(`[${order.id}]: cancelling ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
+    Terminal.log(`[${order.id}]: cancelling ${yellowBright`${order.type} order ${order.direction} at ${order.price} on ${order.account}`}`);
     let data = {
       order_ids: [order.txid],
     };
@@ -109,17 +109,17 @@ export default class CoinbaseClient extends ClientBase {
   }
 
   async downloadAllOrders(status = 'closed') {
-    App.warning(`Downloading all ${status} orders from ${this.id}`);
+    Terminal.warning(`Downloading all ${status} orders from ${this.id}`);
     var orderCount = 0;
 
     return this.requestOrders(status).then((response) => {
       var promises = [];
       promises.push(new Promise((resolve, reject) => (this.updateOrders(response.data.orders, status, true) ? resolve(true) : reject(false))));
       orderCount = response.data.orders.length - Object.keys(response.data.orders).length;
-      App.warning(`Total orders: ${response.data.orders.length}, ${response.data.orders.length - this.orders.size} missing from ${this.id}`);
+      Terminal.warning(`Total orders: ${response.data.orders.length}, ${response.data.orders.length - this.orders.size} missing from ${this.id}`);
       let requests = Math.ceil(orderCount / 50);
       for (let i = 1; i <= requests; i++) {
-        App.warning(`Submitting request ${yellowBright`${i.toString()}`} to ${this.id}`);
+        Terminal.warning(`Submitting request ${yellowBright`${i.toString()}`} to ${this.id}`);
 
         promises.push(
           this.requestOrders(status, { pagination: 50 * i }).then(
@@ -132,11 +132,11 @@ export default class CoinbaseClient extends ClientBase {
   }
 
   async requestOrdersByStatus(status, options = undefined) {
-    App.log(`${cyanBright`Downloading`} ${this.id} ${status} orders`);
+    Terminal.log(`${cyanBright`Downloading`} ${this.id} ${status} orders`);
     return this.requestOrders(status, options).then(
       (response) =>
         new Promise((resolve, reject) => {
-          App.log(`Received ${cyanBright`${response.data.orders.length} ${status} orders`} from ${this.id}`, true);
+          Terminal.log(`Received ${cyanBright`${response.data.orders.length} ${status} orders`} from ${this.id}`, true);
           if (this.updateOrders(response.data.orders, status)) resolve(true);
           else reject(false);
         }),
@@ -149,7 +149,7 @@ export default class CoinbaseClient extends ClientBase {
    * @returns {Promise<any>}
    */
   async requestTickers(pairs) {
-    App.log(greenBright`Updating prices from ${this.id}`);
+    Terminal.log(greenBright`Updating prices from ${this.id}`);
     var tickers = {};
     var promises = [];
     pairs.forEach((pair) =>
@@ -167,7 +167,7 @@ export default class CoinbaseClient extends ClientBase {
    */
   updateOrders(orders, status) {
     if (typeof orders === 'undefined') {
-      App.log(`No ${this.id} ${status} orders received`);
+      Terminal.log(`No ${this.id} ${status} orders received`);
       return false;
     }
     let statusOrders = orders.filter((order) => order.status === CoinbaseClient.ConvertStatusToCoinbase(status));
@@ -188,16 +188,16 @@ export default class CoinbaseClient extends ClientBase {
         var orderYear = o.openDate.getFullYear();
         if (orderYear === year) {
           data[id] = o.original;
-          App.log(`Added order: ${id}`);
+          Terminal.log(`Added order: ${id}`);
         }
       } catch (ex) {
-        App.printObject(o);
+        Terminal.printObject(o);
         throw ex;
       }
     });
-    if (data.length === 0) App.warning(`[${this.id}]: No orders found for ${year}`);
+    if (data.length === 0) Terminal.warning(`[${this.id}]: No orders found for ${year}`);
 
-    App.log(`Processed: ${Object.keys(data).length} orders`);
+    Terminal.log(`Processed: ${Object.keys(data).length} orders`);
     this.saveOrdersToFile(`${this.id}-${year}-orders`, data);
   }
 
@@ -259,12 +259,12 @@ export default class CoinbaseClient extends ClientBase {
     if (method === 'POST') config.data = JSON.stringify(data);
     // @ts-ignore
     return axios(config).catch((error) => {
-      //App.printObject(error);
-      App.error(`Invalid request from: ${request_path}`, false);
-      App.log(`\t${error.code}: ${error.error}`);
-      App.log('\t' + error.message);
-      App.printObject(error.details, false);
-      if (error.code == 429) App.warning('Rate limit exceeded');
+      //Terminal.printObject(error);
+      Terminal.error(`Invalid request from: ${request_path}`, false);
+      Terminal.log(`\t${error.code}: ${error.error}`);
+      Terminal.log('\t' + error.message);
+      Terminal.printObject(error.details, false);
+      if (error.code == 429) Terminal.warning('Rate limit exceeded');
     });
   }
 
@@ -274,8 +274,8 @@ export default class CoinbaseClient extends ClientBase {
 
   getTxidFromResponse(response) {
     if (typeof response.data === 'undefined') {
-      App.printObject(response.data);
-      App.error('No data received');
+      Terminal.printObject(response.data);
+      Terminal.error('No data received');
     }
     return response.data.success_response.order_id;
   }
@@ -291,7 +291,7 @@ export default class CoinbaseClient extends ClientBase {
     var result = false;
     var newStatus = 'none';
 
-    App.log(`Checking pending order ${plannedOrder.id}`);
+    Terminal.log(`Checking pending order ${plannedOrder.id}`);
 
     if (exchangeOrder.status === 'FILLED') {
       plannedOrder.status = 'executed';
@@ -306,20 +306,20 @@ export default class CoinbaseClient extends ClientBase {
 
   async processAction(action) {
     var response = await this.executeAction(action);
-    //App.printObject(action);
+    //Terminal.printObject(action);
     if (!response.data.success) {
-      App.log(redBright`Response follows:`, true);
+      Terminal.log(redBright`Response follows:`, true);
       let error = response.data.error_response;
-      App.printObject(error);
-      App.printObject(response.data);
-      App.error(error.preview_failure_reason, false);
-      App.error(error.message, false);
+      Terminal.printObject(error);
+      Terminal.printObject(response.data);
+      Terminal.error(error.preview_failure_reason, false);
+      Terminal.error(error.message, false);
       throw new Error(error.error);
     } else {
-      App.log(greenBright`Response follows:`, true);
-      App.printObject(response.data.success_response);
+      Terminal.log(greenBright`Response follows:`, true);
+      Terminal.printObject(response.data.success_response);
     }
-    App.log(yellowBright`----- end -----`);
+    Terminal.log(yellowBright`----- end -----`);
     return response;
   }
 
@@ -355,8 +355,8 @@ export default class CoinbaseClient extends ClientBase {
       var type = txinfo.order_type === 'LIMIT' ? 'limit' : 'market';
       var status = txinfo.status === 'FILLED' ? 'closed' : 'open';
 
-      // App.error('CB transaction:', false);
-      // App.printObject(txinfo);
+      // Terminal.error('CB transaction:', false);
+      // Terminal.printObject(txinfo);
       return new ExchangeOrder({
         type: type,
         status: status,
@@ -378,8 +378,8 @@ export default class CoinbaseClient extends ClientBase {
       });
     } catch (e) {
       console.log(txinfo);
-      App.log('--');
-      App.rethrow(e);
+      Terminal.log('--');
+      Terminal.rethrow(e);
     }
   }
 
@@ -405,9 +405,9 @@ export default class CoinbaseClient extends ClientBase {
         minBaseDisplayDigits: pair.base_min_size.split('.')[1]?.length || 0,
       });
     } catch (e) {
-      App.warning(pair.product_id);
-      App.printObject(pair);
-      App.rethrow(e);
+      Terminal.warning(pair.product_id);
+      Terminal.printObject(pair);
+      Terminal.rethrow(e);
     }
   }
 
@@ -452,7 +452,7 @@ export default class CoinbaseClient extends ClientBase {
         break;
 
       default:
-        App.log(`Unknown command ${action.command} // ${action.plannedOrder?.id}`);
+        Terminal.log(`Unknown command ${action.command} // ${action.plannedOrder?.id}`);
     }
 
     return data;

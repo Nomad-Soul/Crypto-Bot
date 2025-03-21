@@ -1,11 +1,12 @@
 import { yellowBright, cyanBright, redBright, greenBright } from 'ansis';
-import App from '../app.js';
 import CryptoBot from '../crypto-bot.js';
 import BotSettings from '../data/bot-settings.js';
 import EcaOrder from '../data/eca-order.js';
 import PairData from '../data/pair-data.js';
 import TraderDeal from '../data/trader-deal.js';
 import ExchangeOrder from '../data/exchange-order.js';
+import { nanoid } from 'nanoid';
+import Terminal from '../app/terminal.js';
 
 export default class DealPlanner {
   #bot;
@@ -40,9 +41,13 @@ export default class DealPlanner {
       let client = this.#bot.getClient(this.botSettings.account);
       this.pairData = client.getPairData(this.botSettings.pair);
     } catch (e) {
-      App.printObject(this.botSettings.toJSON());
-      App.error(`[${this.botId}]: invalid bot settings`);
+      Terminal.printObject(this.botSettings.toJSON());
+      Terminal.error(`[${this.botId}]: invalid bot settings`);
     }
+  }
+
+  #generateNewOrderId() {
+    return `${this.botSettings.pair}-${nanoid(8)}`.slice(0, 18);
   }
 
   /**
@@ -50,40 +55,31 @@ export default class DealPlanner {
    * @param {TraderDeal} openDeal
    * @returns
    */
-  calculateSafetyOrder(openDeal) {
+  proposeSafetyOrder(openDeal) {
     let n = openDeal.buyOrders.length;
     if (n - 1 >= this.maxSafetyOrders) {
       let message = `[${this.botId}]: max Safety Orders reached: ${n - 1}`;
-      App.warning(message);
+      Terminal.warning(message);
     }
     var client = this.#bot.getClient(this.botSettings.account);
     var pair = this.botSettings.pair;
-    let safetyOrder = this.safetyOrder;
-    let priceDeviation = this.priceDeviation;
-    let safetyOrders = openDeal.buyOrders
-      .map((id) => client.getLocalOrder(id))
-      .filter((o) => o && !o.isOpen)
-      .sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime());
 
-    let firstOrder = safetyOrders[0];
-    let initialPrice = openDeal.overrideAveragePrice > 0 ? openDeal.overrideAveragePrice : firstOrder.price;
-    let limitPrice;
-    let volume;
+    let { limitPrice, volume } = this.#calculateNextSafetyOrder(openDeal, n);
+    let currentPrice = client.getPrice(pair);
 
-    for (let i = 0; i < openDeal.buyOrders.length; i++) {
-      limitPrice = initialPrice - initialPrice * (i + 1) * priceDeviation;
-      volume = safetyOrder / limitPrice;
-      priceDeviation *= this.safetyOrderStepScale;
-      safetyOrder *= this.safetyOrderVolumeScale;
-
-      //App.log(`${i}: price: ${limitPrice.toFixed(2)} / ${volume.toFixed(2)}`);
+    while (Math.abs(limitPrice - currentPrice) < this.priceDeviation * currentPrice) {
+      let result = this.#calculateNextSafetyOrder(openDeal, ++n);
+      limitPrice = result.limitPrice;
     }
 
-    return new EcaOrder(
+    var cost = limitPrice * volume;
+    var fees = this.makerFee * cost;
+
+    var buyOrder = new EcaOrder(
       {
         botId: this.botId,
-        strategy: 'trader',
-        volumeQuote: limitPrice * volume,
+        strategy: this.botSettings.strategyType,
+        volumeQuote: cost,
         account: this.botSettings.account,
       },
       new ExchangeOrder({
@@ -93,11 +89,44 @@ export default class DealPlanner {
         openDate: new Date(),
         price: limitPrice,
         volume: Number(volume.toFixed(this.pairData.maxBaseDigits)),
-        fees: this.makerFee * (limitPrice * volume),
+        fees: fees,
         pair: pair,
-        userref: safetyOrders[0].userref,
+        userref: this.#generateNewOrderId(),
       }),
     );
+
+    Terminal.log(
+      `[^c${openDeal.id}]^:: proposing ^rbuy^ at ^Y${limitPrice.toFixed(this.pairData.maxQuoteDigits)}^ Volume: ^Y${volume.toFixed(this.pairData.maxBaseDigits)}^ Total Cost: ^R${(cost + fees).toFixed(this.pairData.maxQuoteDigits)}`,
+    );
+
+    return buyOrder;
+  }
+
+  /**
+   * @param {TraderDeal} openDeal
+   * @param {number} n
+   */
+  #calculateNextSafetyOrder(openDeal, n) {
+    let limitPrice = Number.MAX_SAFE_INTEGER;
+    let priceDeviation = this.priceDeviation;
+    let safetyOrder = this.safetyOrder;
+    var client = this.#bot.getClient(this.botSettings.account);
+    let safetyOrders = openDeal.buyOrders
+      .map((id) => client.getLocalOrder(id))
+      .filter((o) => o && !o.isOpen)
+      .sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime());
+
+    let firstOrder = safetyOrders[0];
+    let initialPrice = openDeal.overrideAveragePrice > 0 ? openDeal.overrideAveragePrice : firstOrder.price;
+
+    let volume;
+    for (let i = 0; i < n; i++) {
+      limitPrice = initialPrice - initialPrice * (i + 1) * priceDeviation;
+      volume = safetyOrder / limitPrice;
+      priceDeviation *= this.safetyOrderStepScale;
+      safetyOrder *= this.safetyOrderVolumeScale;
+    }
+    return { limitPrice, volume };
   }
 
   /**
@@ -120,7 +149,7 @@ export default class DealPlanner {
       new EcaOrder(
         {
           botId: this.botId,
-          strategy: 'trader',
+          strategy: this.botSettings.strategyType,
           volumeQuote: initialOrderSize,
           account: this.botSettings.account,
         },
@@ -132,7 +161,7 @@ export default class DealPlanner {
           price: Number(currentPrice),
           volume: Number(volume.toFixed(maxBaseDigits)),
           fees: this.takerFee * initialOrderSize,
-          userref: this.botSettings.userref + dealIndex,
+          userref: this.#generateNewOrderId(),
           pair: pair,
         }),
       ),
@@ -149,7 +178,7 @@ export default class DealPlanner {
         new EcaOrder(
           {
             botId: this.botId,
-            strategy: 'trader',
+            strategy: this.botSettings.strategyType,
             volumeQuote: safetyOrder,
             account: this.botSettings.account,
           },
@@ -161,7 +190,7 @@ export default class DealPlanner {
             price: Number(limitPrice),
             volume: Number((safetyOrder / limitPrice).toFixed(maxBaseDigits)),
             fees: this.makerFee * safetyOrder,
-            userref: this.botSettings.userref + dealIndex,
+            userref: this.#generateNewOrderId(),
             pair: pair,
           }),
         ),
@@ -172,15 +201,15 @@ export default class DealPlanner {
     }
 
     let volumeCurrency = currentPrice * volume;
-    let averagePrice = currentPrice * (1 + this.takerFee);
-    let targetProfit = TraderDeal.CalculateProfitTarget(averagePrice, this.profitTarget, this.makerFee);
+    let averageCost = currentPrice * (1 + this.takerFee);
+    let targetProfit = TraderDeal.CalculateProfitTarget(averageCost, this.profitTarget, this.makerFee);
     let sellVolume = orders[0].order.volume * targetProfit;
 
     orders.push(
       new EcaOrder(
         {
           botId: this.botId,
-          strategy: 'trader',
+          strategy: this.botSettings.strategyType,
           volumeQuote: Number(sellVolume.toFixed(maxQuoteDigits)),
           account: this.botSettings.account,
         },
@@ -192,7 +221,7 @@ export default class DealPlanner {
           price: Number(targetProfit.toFixed(2)),
           volume: Number(orders[0].order.volume.toFixed(maxBaseDigits)),
           fees: this.makerFee * sellVolume,
-          userref: this.botSettings.userref + dealIndex,
+          userref: this.#generateNewOrderId(),
           pair: pair,
         }),
       ),
@@ -207,7 +236,7 @@ export default class DealPlanner {
       return sum;
     }, 0);
 
-    App.warning(`Total spent: ${total.toFixed(2)}`);
+    Terminal.warning(`Total spent: ${total.toFixed(2)}`);
     var newDeal = new TraderDeal({
       index: this.botSettings.userref + dealIndex,
       botId: this.botId,
@@ -223,12 +252,13 @@ export default class DealPlanner {
   /**
    *
    * @param {TraderDeal} deal
-   * @param { { averagePrice: Number, costBasis: Number, targetPrice: Number }} dealData
+   * @param { { averageCost: Number, costBasis: Number, targetPrice: Number }} dealData
    */
   proposeTakeProfitOrder(deal, dealData = null) {
+    var term = Terminal.instance;
     if (dealData === null) dealData = deal.calculateProfitTarget(this.#bot, this.botSettings);
 
-    const { averagePrice, costBasis, targetPrice } = dealData;
+    const { averageCost, costBasis, targetPrice } = dealData;
 
     var client = this.#bot.getClient(this.botSettings.account);
     var currentPrice = client.getPrice(this.botSettings.pair);
@@ -239,23 +269,23 @@ export default class DealPlanner {
 
     var volume = client.getBalance(this.botSettings.base);
     if (volume === 0) volume = client.getBalance(this.botSettings.alternateBase);
-    if (volume === 0) App.error(`Cannot plan take profit order: no volume for ${deal.id}`);
+    if (volume === 0) Terminal.error(`Cannot plan take profit order: no volume for ${deal.id}`);
 
     var volumeQuote = volume * sellPrice;
-    var pnl = (sellPrice - averagePrice) * volume;
+    var pnl = (sellPrice - averageCost) * volume;
 
-    App.log(
-      `[${cyanBright`${deal.id}`}]: Proposing sell at ${yellowBright`${sellPrice.toFixed(this.pairData.maxQuoteDigits)}`} Volume: ${yellowBright`${volume.toFixed(this.pairData.maxBaseDigits)}`}`,
+    term.log(
+      `[^c${deal.id}^:]: proposing sell at ^Y${sellPrice.toFixed(this.pairData.maxQuoteDigits)}^ Volume: ^Y${volume.toFixed(this.pairData.maxBaseDigits)}`,
     );
-    var colour = pnl > 0 ? greenBright : redBright;
-    App.log(
-      yellowBright`Estimated PnL: ${colour`${pnl.toFixed(this.pairData.maxQuoteDigits)} ${this.pairData.quote} (${((100 * pnl) / costBasis).toFixed(2)} %)`}`,
+    var colour = pnl > 0 ? '^G' : '^R';
+    term.log(
+      `Estimated PnL: ${colour}${pnl.toFixed(this.pairData.maxQuoteDigits)}^ ${this.pairData.quote.toUpperCase()} (${colour}${((100 * pnl) / costBasis).toFixed(2)} %^:)`,
     );
 
     var sellOrder = new EcaOrder(
       {
         botId: this.botId,
-        strategy: 'trader',
+        strategy: this.botSettings.strategyType,
         volumeQuote: Number(volumeQuote.toFixed(this.pairData.maxQuoteDigits)),
         account: this.botSettings.account,
       },
@@ -267,7 +297,7 @@ export default class DealPlanner {
         price: sellPrice,
         volume: Number(volume.toFixed(this.pairData.maxBaseDigits)),
         fees: Number((this.makerFee * volumeQuote).toFixed(this.pairData.maxQuoteDigits)),
-        userref: deal.index,
+        userref: this.#generateNewOrderId(),
         pair: this.botSettings.pair,
       }),
     );

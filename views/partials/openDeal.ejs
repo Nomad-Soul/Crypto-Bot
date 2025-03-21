@@ -1,0 +1,41 @@
+<div class="bg-dark-container p-md-4 p-2">
+  <% if (result) { %>
+  <div class="row">
+    <div class="col-9">
+      <h5 class="text-start">Active <span class="text-info"><%= botId %></span> deal: <code><%= dealId %></code> </h5>
+    </div>
+    <div class="col-3 text-end text-neutral">
+      <h5><%= timeElapsed %> old</h5>
+    </div>
+  </div>
+    <div class="row">
+        <div class="col-4 text-start"><%= nextBuyPrice.toFixed(2) %></div>
+        <div class="col-4 text-center"><%= averageCost.toFixed(2) %></div>
+        <div class="col-4 text-end"><%= takeProfitPrice.toFixed(2) %></div>
+    </div>
+    <div class="row">
+        <div class="col">
+            <div class="progress">
+                <div class="progress-bar bg-secondary" role="progressbar" style="width: <%= widthSafety.toFixed(4) %>%" aria-valuenow="<%= widthSafety.toFixed(4) %>" aria-valuemin="0" aria-valuemax="100"></div>
+                <div class="progress-bar bg-danger text-start" role="progressbar" style="width: <%= widthLoss.toFixed(4) %>%; overflow:visible" aria-valuenow="<%= widthLoss.toFixed(4) %>" aria-valuemin="0" aria-valuemax="100"><%= labelLoss %></div>
+                <div class="progress-bar bg-success text-end" role="progressbar" style="width: <%= widthProfit.toFixed(4) %>%; overflow:visible" aria-valuenow="<%= widthProfit.toFixed(4) %>" aria-valuemin="0" aria-valuemax="100"><%= labelProfit %></div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-6">
+            PnL: <span class="<%= pnlClass %>"><%= pnlPercent.toFixed(2) %>% (<%= pnlValue.toFixed(2) %> €)</span>
+        </div>
+        <div class="col-6">
+            Potential: <span class="text-success"><%= profitPercent.toFixed(2) %>% (<%= profitPotential.toFixed(2) %> €)</span>
+        </div>
+    </div>
+    <div class="row">
+      <p class="lead text-start ${nextClass}">Next safety order: buy <%= nextBuyVolume %> <span class="badge <%= baseClass %>"><%= base.toUpperCase() %></span> @ <%= nextBuyPrice.toFixed(2) %> (<%= (nextBuyVolume * nextBuyPrice).toFixed(2) %>  <span class="badge bg-info"><%= quote.toUpperCase() %></span>)</p>
+    </div>
+    <% } else { %>
+      <div class="row">
+        <h5 class="text-start"><%= error %> </h5>
+      </div>
+    <% } %>
+</div>

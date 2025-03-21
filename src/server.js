@@ -1,15 +1,18 @@
-import { magentaBright, cyan } from 'ansis';
+import { magentaBright, cyan, greenBright } from 'ansis';
 import express from 'express';
 import cron from 'node-cron';
 import path from 'path';
-import App from './app.js';
+import App from './app/app.js';
 import Renderer from './render.js';
 import CryptoBot from './crypto-bot.js';
 import EcaTrader from './strategies/eca-trader.js';
 import TradeHistory from './strategies/trade-history.js';
+import Terminal from './app/terminal.js';
+
 const __dirname = import.meta.dirname;
 
 var bot = new CryptoBot();
+App.bot = bot;
 process.env.TZ = bot.getLocalSettings().timezone;
 
 const server = express();
@@ -19,19 +22,36 @@ var renderer = new Renderer(bot);
 server.use(express.static('web'));
 server.use(express.json());
 server.use('/css', express.static(path.join(__dirname, '../node_modules/bootswatch/dist/darkly')));
+server.use('/css', express.static(path.join(__dirname, '../node_modules/bootstrap-icons/font')));
 
 App.server = server.listen(port, () => {
-  bot.init();
   (async () => {
-    App.log(magentaBright`Crypto-Bot listening on port ${port.toString()}`, true);
+    await bot.init();
     //await bot.rebuildHistory();
     var result = await bot.update();
   })();
 });
 
+server.set('view engine', 'ejs');
+
+server.get('/', async function (req, res) {
+  const orderSchedule = renderer.renderOrderSchedule();
+  const tradePage = renderer.renderTradePage('bot-eth/eur');
+  var promises = [orderSchedule, tradePage];
+  Promise.allSettled(promises).then((results) => {
+    res.render('index', {
+      title: 'Crypto Bot',
+      message: 'ciao',
+      elements: results[0].value.elements,
+      openDeal: results[1].value.openDeal,
+      dealPreview: results[1].value.dealPreview,
+    });
+  });
+});
+
 server.get('/api', async function (req, res) {
   let target = req.query['target'].toString();
-  App.log(`/${cyan`${target}[${formatEndpoint(req)}]`}: request from ${req.ip}`, true);
+  Terminal.log(`/^C${target}^:[^G${formatEndpoint(req)}^:]: request from ${req.ip}`);
 
   let endpoint = req.query['endpoint'];
   var response;
@@ -83,8 +103,15 @@ server.get('/api', async function (req, res) {
 
       if (botSettings.active && botSettings.strategyType === 'trader') {
         var th = new TradeHistory(bot, botId);
-        //await th.analyseOrders(bot.getClient('krakenBot'), botId, { verbose: true, redownload: false, saveTrades: true, saveDeals: true });
-        response = { status: 'success', request: endpoint, data: th.calculatePnL(groupBy), chartType: 'traderBot', pair: bot.getBotSettings(botId).pair };
+        await th.analyseOrders({ verbose: true, redownload: false, saveTrades: true, saveDeals: true });
+        response = {
+          status: 'success',
+          request: endpoint,
+          data: th.calculatePnL(groupBy),
+          chartType: 'traderBot',
+          pair: bot.getBotSettings(botId).pair,
+          groupBy: groupBy,
+        };
       } else response = { status: 'failed' };
       break;
     }
@@ -105,16 +132,13 @@ server.get('/api', async function (req, res) {
         response = {
           status: 'success',
           request: 'endpoint',
-          html: `Bot ${botId} is not active.`,
+          html: `Trader Bot <strong>${botId}</strong> is not active.`,
         };
       } else {
-        let trader = new EcaTrader(bot, botId);
-        var dealResult = trader.dealPlanner.proposeDeal(trader.client.getPrice(botSettings.pair), 4);
-        let html = (await renderer.renderOpenDeal(trader.getLatestOpenDeal())).html + renderer.renderPreview(botId, dealResult.orders).html;
         response = {
           status: 'success',
           request: endpoint,
-          html: html,
+          html: await renderer.renderTradePage(botId),
         };
       }
       break;
@@ -125,12 +149,6 @@ server.get('/api', async function (req, res) {
       break;
     }
 
-    case 'RebuildHistory': {
-      await bot.rebuildHistory();
-      response = { status: 'success' };
-      break;
-    }
-
     default:
       console.debug(response);
       break;
@@ -138,7 +156,7 @@ server.get('/api', async function (req, res) {
 
   if (response == null) {
     res.json({ status: 'failed' });
-    App.error(`[${endpoint}] no data received`);
+    Terminal.error(`[${endpoint}] no data received`);
     return;
   }
 
@@ -147,7 +165,7 @@ server.get('/api', async function (req, res) {
 
 server.post('/api', async function (req, res) {
   let content = req.body;
-  App.log(`/api[${content.request}]: Received from ${req.ip}`);
+  Terminal.log(`/api[${content.request}]: Received from ${req.ip}`);
   var response;
 
   switch (content.request) {
@@ -164,21 +182,10 @@ cron.schedule('*/30 * * * *', () => {
     update().then(() => App.writeLog());
   } catch (error) {
     bot.telegramBot.log('Oh no!\n' + error);
-    App.log(error);
+    Terminal.log(error);
     App.writeLog();
   }
 });
-
-process.on('SIGINT', stopServer);
-
-async function stopServer() {
-  console.log('\n');
-  App.warning('Exit requested by user');
-  App.warning('----- end -----\n');
-  App.writeLog();
-  bot.saveAllOrders();
-  process.exit();
-}
 
 async function update() {}
 

@@ -1,6 +1,6 @@
 import { yellowBright, cyanBright, redBright, greenBright, magentaBright } from 'ansis';
 
-import App from '../app.js';
+import App from '../app/app.js';
 import CryptoBot from '../crypto-bot.js';
 import Utils from '../utils.js';
 import ClientBase from '../services/client.js';
@@ -8,6 +8,7 @@ import ExchangeOrder from '../data/exchange-order.js';
 import TraderDeal from '../data/trader-deal.js';
 import { nanoid } from 'nanoid';
 import BotSettings from '../data/bot-settings.js';
+import Terminal from '../app/terminal.js';
 
 export default class TradeHistory {
   /**
@@ -21,8 +22,9 @@ export default class TradeHistory {
    * @property {Boolean} reliable;
    */
   #bot;
-  #botId;
   #botSettings;
+  /** @type {ClientBase} */
+  #client;
 
   strategyOrders = {};
 
@@ -34,63 +36,57 @@ export default class TradeHistory {
   constructor(bot, botId) {
     if (typeof bot === 'undefined') throw new Error('Invalid argument: bot');
     this.#bot = bot;
-    this.#botId = botId;
     this.#botSettings = this.#bot.getBotSettings(botId);
+    this.#client = bot.getClient(this.#botSettings.account);
   }
 
-  /**
-   *
-   * @param {ClientBase} accountClient
-   */
-  reportPurchases(accountClient) {
+  reportPurchases() {
     var orders = this.#botSettings.strategy.strategyOrders['closed']
-      .map((txid) => accountClient.getLocalOrder(txid))
+      .map((txid) => this.#client.getLocalOrder(txid))
       .map((order) => [order.closeDate.getTime(), order.price, order.volume]);
     return orders;
   }
 
   /**
    *
-   * @param {ClientBase} client
-   * @param {string} botId
    * @param {{verbose: boolean, redownload: boolean, saveTrades: boolean, saveDeals: boolean}} options
    */
-  async analyseOrders(client, botId, options = undefined) {
+  async analyseOrders(options = undefined) {
     const { verbose, redownload, saveTrades, saveDeals } = options || { verbose: false, redownload: false, saveTrades: false, saveDeals: false };
 
     var balance = 0;
-    if (redownload) await client.downloadAll(2021, 'closed');
+    if (redownload) await this.#client.downloadAll(2021, 'closed');
 
     var dataDeals = [];
     var dealIndex = 1;
 
-    var orders = [...client.orders.values()].filter((o) => o.isClosed).sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime());
+    var orders = [...this.#client.orders.values()].filter((order) => order.isClosed).sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime());
     var prevOrder = null;
     var costBasis = 0;
     var proceeds = 0;
     var openDate = orders[0].openDate;
     var closeDate;
-    await client.awaitPrices();
-    var currentPrice = client.getPrice(this.#botSettings.pair);
+    await this.#client.awaitPrices();
+    var currentPrice = this.#client.getPrice(this.#botSettings.pair);
 
-    App.log(`Analysing Orders. Current Price for ${cyanBright`${this.#botSettings.pair}`} is ${currentPrice.toFixed(2)};`);
+    Terminal.log(`Analysing Orders. Current Price for ${cyanBright`${this.#botSettings.pair}`} is ${currentPrice.toFixed(2)};`);
 
     /**
-     *
      * @param {ExchangeOrder} lastOrder
      */
     function savePnl(lastOrder) {
       var profit = proceeds - costBasis;
       if (verbose) {
         var colour = profit > 0 ? greenBright : redBright;
-        if (profit > 100) colour = magentaBright;
+        if (Math.abs(balance * currentPrice) > 10) colour = magentaBright;
         else if (profit < 0 && lastOrder.side === 'buy') {
           profit = balance * currentPrice - costBasis;
         }
 
-        App.log(
+        Terminal.log(
           colour`Profit: ${profit.toFixed(2)} (${proceeds.toFixed(2)}:${costBasis.toFixed(2)}) - remaining balance: ${balance.toFixed(4)} (${(balance * currentPrice).toFixed(2)} ${App.locale.currency})`,
         );
+        Terminal.log('\r');
       }
       closeDate = prevOrder.closeDate;
       dataDeals.push({
@@ -112,6 +108,8 @@ export default class TradeHistory {
     /** @type {TraderDeal[]} */
     var deals = [];
 
+    var botId = this.#botSettings.id;
+    var account = this.#client.id;
     /**
      *
      * @param {ExchangeOrder} lastOrder
@@ -123,7 +121,7 @@ export default class TradeHistory {
           botId: botId,
           buyOrders: buyOrders,
           sellOrders: sellOrders,
-          account: client.id,
+          account: account,
           status: lastOrder.side === 'sell' ? 'closed' : 'open',
         });
         deals.push(deal);
@@ -136,7 +134,7 @@ export default class TradeHistory {
       let order = orders[i];
       let color = order.side === 'buy' ? cyanBright : greenBright;
 
-      if (prevOrder != null && order.side === 'buy' && prevOrder.side === 'sell') {
+      if (order.side === 'buy' && prevOrder?.side === 'sell' && balance <= 0.01) {
         if (saveTrades) savePnl(prevOrder);
         if (saveDeals) saveDeal(prevOrder);
         openDate = order.openDate;
@@ -153,9 +151,14 @@ export default class TradeHistory {
       if (order.side === 'sell' && (balance > 2e-8 || balance < 0)) color = redBright;
 
       if (verbose) {
-        var currency = order.pair.split('/')[1].toUpperCase();
-        App.log(
-          color`[${order.userref}]: ${Utils.toShortDate(order.closeDate)} ${order.side} [${order.txid} / ${order.txid || 'unknown'}] Vol: ${order.volume.toFixed(8)} / ${balance.toFixed(8)} (${(order.volume * order.price).toFixed(2)} ${currency} + ${order.fees.toFixed(2)} ${currency})`,
+        try {
+          var currency = order.pair.split('/')[1].toUpperCase();
+        } catch (ex) {
+          Terminal.printObject(order);
+          Terminal.rethrow(ex);
+        }
+        Terminal.log(
+          color`[${Utils.toShortDate(order.closeDate)}]: ${order.side} [${order.txid}] Vol: ${order.volume.toFixed(8)} / ${balance.toFixed(8)} (${(order.volume * order.price).toFixed(2)} ${currency} + ${order.fees.toFixed(2)} ${currency})`,
         );
       }
 
@@ -167,18 +170,18 @@ export default class TradeHistory {
       prevOrder = order;
     }
 
-    if (saveTrades) savePnl(prevOrder);
-    if (saveDeals) saveDeal(prevOrder);
+    if (saveTrades && prevOrder.isClosed && balance <= 0.01) savePnl(prevOrder);
+    if (saveDeals && prevOrder.isClosed && balance <= 0.01) saveDeal(prevOrder);
 
     if (saveTrades) {
-      App.writeFile(`${App.DataPath}/${client.id}/${this.#botSettings.fileId}-trades`, dataDeals);
+      App.writeFile(`${App.DataPath}/${this.#client.id}/${this.#botSettings.fileId}-trades`, dataDeals);
     }
     if (saveDeals) {
       var dealObject = {};
       for (let deal of deals) {
         dealObject[deal.id] = deal;
       }
-      App.writeFile(`${App.DataPath}/${client.id}/${this.#botSettings.fileId}-deals-recovered`, dealObject);
+      App.writeFile(`${App.DataPath}/${this.#client.id}/${this.#botSettings.fileId}-deals-recovered`, dealObject);
     }
   }
 
@@ -187,7 +190,7 @@ export default class TradeHistory {
     var account = this.#botSettings.account;
     var data = App.readFileSync(`${App.DataPath}/${account}/${this.#botSettings.fileId}-trades.json`);
 
-    App.warning(`Analysing ${data.length} trades`);
+    Terminal.warning(`Analysing ${data.length} trades`);
 
     /**
      *
@@ -249,7 +252,11 @@ export default class TradeHistory {
       var label = groupByFunction(trade);
       if (!dataset.has(label)) dataset.set(label, { pnl: 0, reliable: true });
       var currentValue = dataset.get(label).pnl;
-      dataset.set(label, { pnl: currentValue + trade.proceeds - trade.costBasis, reliable: trade.reliable });
+      let pnl = { pnl: currentValue + trade.proceeds - trade.costBasis, reliable: trade.reliable };
+      dataset.set(label, pnl);
+      // Terminal.warning(label);
+      // Terminal.printObject(pnl);
+      // Terminal.log(`CV: ${currentValue} tp: ${trade.proceeds} cb: ${trade.costBasis}`);
     }
 
     return fillFunction(dataset);
@@ -339,7 +346,7 @@ export default class TradeHistory {
         addMissingEntries(prevWeek, prevYear, weeksUntilEOY);
         addMissingEntries(0, year, week);
       } else if ((year - prevYear ?? 0) > 1) {
-        App.error('Multi-year gaps not handled');
+        Terminal.error('Multi-year gaps not handled');
       } else if (weekDelta >= 1) {
         addMissingEntries(prevWeek, weekDelta);
       }

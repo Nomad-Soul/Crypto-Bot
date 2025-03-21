@@ -1,4 +1,7 @@
-import App from '../app.js';
+import Terminal from '../app/terminal.js';
+import { yellowBright, cyanBright, redBright, greenBright } from 'ansis';
+import PairData from './pair-data.js';
+import App from '../app/app.js';
 
 export default class ExchangeOrder {
   static CurrentVersion = '1.0';
@@ -59,21 +62,29 @@ export default class ExchangeOrder {
     }
 
     if (this.isClosed && !this.closeDate) {
-      App.printObject(data);
-      App.error(`Order ${this.txid} does not have a closing time`);
+      Terminal.printObject(data);
+      Terminal.error(`Order ${this.txid} does not have a closing time`);
+    }
+
+    if (this.isOpen && !this.cost) {
+      this.cost = this.volume * this.price + this.fees;
     }
 
     if (this.status !== 'planned' && !this.txid) {
-      App.printObject(data);
-      App.error(`Orders that have been submitted to an exchange must have a transaction id <txid>`);
+      Terminal.printObject(data);
+      Terminal.error(`Orders that have been submitted to an exchange must have a transaction id <txid>`);
     }
 
     if (this.txid && !this.status) {
       if (this.status !== 'open' && !this.volume) {
-        App.printObject(data);
-        App.error(`Order ${this.txid} is invalid`);
+        Terminal.printObject(data);
+        Terminal.error(`Order ${this.txid} is invalid`);
       }
     }
+  }
+
+  get totalCost() {
+    return this.volume * this.price + this.fees;
   }
 
   get isOpen() {
@@ -86,5 +97,22 @@ export default class ExchangeOrder {
 
   get isCancelled() {
     return this.status === 'cancelled';
+  }
+
+  /**
+   *
+   * @param {PairData} pairData
+   * @returns {string}
+   */
+  toString(pairData) {
+    var sideColor = this.side === 'buy' ? '^G' : '^R';
+    var costColor = this.side === 'buy' ? '^R' : '^G';
+    var orderColor = this.type === 'market' ? '^R' : '^y';
+    var volume = `^C${this.volume.toFixed(pairData.maxBaseDigits)}^`;
+    var price = `^Y${this.price.toFixed(pairData.maxQuoteDigits)}^`;
+
+    var minQuoteDigits = Math.min(App.locale.minQuoteDigits, pairData.maxQuoteDigits);
+    var cost = `${costColor}${this.totalCost.toFixed(minQuoteDigits)}^`;
+    return `${orderColor}${this.type} ${sideColor}${this.side} ${volume} ${pairData.base.toUpperCase()} at ${price} for ${cost} ${pairData.quote.toUpperCase()}`;
   }
 }

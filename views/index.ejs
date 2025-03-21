@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#712cf9" />
+    <title><%= title %></title>
+    <link href="css/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/bootstrap-icons.min.css" rel="stylesheet" />
+    <link href="css/style.css" rel="stylesheet" />
+    <script src="js/client.js" type="module"></script>
+</head>
+<body class="d-flex h-100 text-center text-bg-dark bg-body-dark">
+  <div class="cover-container d-flex w-100 h-100 p-4 mx-auto flex-column">
+    <header class="mb-auto">
+      <div>
+        <h3 class="float-md-start mb-0"><%= title %></h3>
+        <nav class="nav nav-masthead justify-content-center float-md-end">
+          <a class="nav-link fw-bold py-1 px-0 active" data-target="plannedOrders" id="btn-home" aria-current="page" href="#">Home</a>
+          <a class="nav-link fw-bold py-1 px-0" data-target="activePlans" id="btn-activePlans" href="#">Active Plans</a>
+          <!-- <a class="nav-link fw-bold py-1 px-0" data-target="dealHistory" id="btn-history" href="#">Deal History</a> -->
+          <a class="nav-link fw-bold py-1 px-0" data-target="trade" href="#">Trade</a>
+          <a class="nav-link fw-bold py-1 px-0" data-target="stats" href="#">Stats</a>
+        </nav>
+      </div>
+    </header>
+    <main>
+      <div id="plannedOrders" class="tab bg-dark-container p-md-4 p-2">
+        <% for (let i=0; i < elements.slice(25).length; i++) { %>
+          <%- include('./partials/orderEntry', elements[i]); %>
+        <% } %>
+      </div>
+      <div id="trade" class="tab" style="display: none">
+        <div id="open-deal" class="">
+          <%- include('./partials/openDeal', openDeal); %>
+        </div>
+        <div id="deal-preview" class="">
+          <%- include('./partials/dealPreview', dealPreview); %>
+        </div>
+        <div id="dealToolbar" class="mt-4">
+          <button id="btn-startDeal" type="button" class="btn btn-primary btn-lg" alt="Start deal">
+            <i class="bi bi-play-fill"></i>
+          </button>
+          <button id="btn-cancelAll" type="button" class="btn btn-danger btn-lg" alt="Cancel all orders">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+      </div>
+      <div id="stats" class="tab" style="display: none">
+        <canvas id="candlestick"></canvas>
+        <canvas id="stackerBot"></canvas>
+        <canvas id="traderBot"></canvas>
+      </div>
+    </main>
+    <footer class="mt-auto text-white-50">
+      <small
+        >Crypto-Bot by NomadSoul <a href="https://github.com/Nomad-Soul/Crypto-Bot">[GitHub]</a> - Donations: [BTC]
+        bc1qfts5n7dkx0x2nv03c0pmu92778uhh00ns58u59</small
+      >
+    </footer>
+</body>
+</html>

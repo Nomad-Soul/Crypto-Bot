@@ -1,4 +1,4 @@
-import App from '../app.js';
+import App from '../app/app.js';
 
 export default class PairData {
   id;
@@ -11,6 +11,7 @@ export default class PairData {
   nativeBaseId;
   nativeQuoteId;
 
+  /** @type { {price: Number, amount: Number}} */
   precision;
   /** @type {Number} */
   takerFees;

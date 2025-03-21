@@ -1,7 +1,7 @@
 import EcaOrder from '../data/eca-order.js';
-import App from '../app.js';
 import BotSettings from '../data/bot-settings.js';
 import ExchangeOrder from '../data/exchange-order.js';
+import Terminal from '../app/terminal.js';
 
 export default class EcaPlanner {
   botId;
@@ -25,7 +25,9 @@ export default class EcaPlanner {
     const hourMilliseconds = 1000 * 60 * 60;
 
     var dateNow = new Date();
-    if (dateNow.getTime() - startDate.getTime() > hourMilliseconds * options.frequency) startDate = dateNow;
+
+    // if we have missed an order, sets to next to fire immediately
+    if (dateNow.getTime() - startDate.getTime() > hourMilliseconds * options.frequency) startDate = new Date(Date.now() - hourMilliseconds * options.frequency);
 
     for (let i = 0; i < count; i++) {
       let nextDate = new Date(startDate.getTime() + (i + 1) * hourMilliseconds * options.frequency);
@@ -68,8 +70,8 @@ export default class EcaPlanner {
       try {
         nextDate = EcaPlanner.findDayOption(EcaPlanner.#findDayOfWeek(options.option), Number(options.day), startDate.getMonth(), startDate.getFullYear());
       } catch (e) {
-        App.warning(startDate);
-        App.error(`Invalid date in ${this.botId}`);
+        Terminal.warning(startDate);
+        Terminal.error(`Invalid date in ${this.botId}`);
       }
 
       orders[i] = new EcaOrder(
@@ -125,7 +127,7 @@ export default class EcaPlanner {
         return 6;
 
       default:
-        App.error(`Invalid day: ${dayOfWeek}`);
+        Terminal.error(`Invalid day: ${dayOfWeek}`);
     }
   }
 

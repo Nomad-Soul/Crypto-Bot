@@ -1,4 +1,5 @@
-import App from '../app.js';
+import App from '../app/app.js';
+import Terminal from '../app/terminal.js';
 import EcaOrder from './eca-order.js';
 import PairData from './pair-data.js';
 
@@ -9,16 +10,20 @@ export default class Action {
   /** @type {PairData} */
   pairData;
 
+  /** @type {string} */
+  tradeId;
+
   /** @type {import('../types.js').postExecutionCallback} */
   postExecutionCallback;
 
   /**
    *
-   * @param {{command: string, pairData?: PairData, order: EcaOrder, isTest?: Boolean, callback?: import('../types.js').postExecutionCallback}} data
+   * @param {{command: string, pairData?: PairData, order: EcaOrder, tradeId?: string, isTest?: Boolean, callback?: import('../types.js').postExecutionCallback}} data
    */
   constructor(data) {
     this.command = data.command;
     this.pairData = data.pairData;
+    this.tradeId = data.tradeId;
     this.postExecutionCallback = data.callback;
 
     switch (this.command) {
@@ -38,7 +43,7 @@ export default class Action {
           return this.plannedOrder.isValid();
       }
     } catch (e) {
-      App.printObject(this);
+      Terminal.printObject(this);
       throw e;
     }
   }
@@ -46,14 +51,16 @@ export default class Action {
   /**
    *
    * @param {EcaOrder} order
+   * @param {import('../types.js').postExecutionCallback} callback
    * @returns {Action}
    */
-  static CancelAction(order, isTest = false) {
+  static CancelAction(order, callback, isTest = false) {
     if (typeof order === 'undefined') throw new Error('Invalid order passed to Action.CancelAction');
     return new Action({
       command: 'cancelOrder',
       order: order,
       isTest: isTest,
+      callback: callback,
     });
   }
 
@@ -128,7 +135,7 @@ export default class Action {
         return this.LimitAction(plannedOrder, pairData, callback);
 
       default:
-        App.error(`Invalid order type in ${plannedOrder.id}`);
+        Terminal.error(`Invalid order type in ${plannedOrder.id}`);
     }
   }
 }

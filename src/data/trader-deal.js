@@ -1,11 +1,13 @@
 import { yellowBright, cyanBright, redBright, greenBright } from 'ansis';
 import ClientBase from '../services/client.js';
 import BotSettings from './bot-settings.js';
-import App from '../app.js';
+import App from '../app/app.js';
 import CryptoBot from '../crypto-bot.js';
 import { nanoid } from 'nanoid';
 import ExchangeOrder from './exchange-order.js';
 import PairData from './pair-data.js';
+import Terminal from '../app/terminal.js';
+import FifoCalculator from './fifoCalculator.js';
 
 export default class TraderDeal {
   id;
@@ -20,9 +22,6 @@ export default class TraderDeal {
   overrideAveragePrice;
   account;
 
-  /** @type {ExchangeOrder[]} */
-  #exchangeOrders;
-
   /**
    * @param {{id?: string, botId: string, buyOrders: string[], sellOrders: string[], index: Number, status: string, account: string, overrideAveragePrice?: Number}} data
    */
@@ -35,6 +34,9 @@ export default class TraderDeal {
     this.status = data.status;
     this.account = data.account;
     this.overrideAveragePrice = data.overrideAveragePrice ?? 0;
+
+    this.costBasis = 0;
+    this.balance = 0;
   }
 
   get isOpen() {
@@ -63,15 +65,6 @@ export default class TraderDeal {
   /**
    *
    * @param {CryptoBot} bot
-   * @returns
-   */
-  fetchExchangeOrders(bot) {
-    let client = bot.getClient(this.account);
-    this.#exchangeOrders = this.buyOrders.map((txid) => client.getLocalOrder(txid));
-  }
-  /**
-   *
-   * @param {CryptoBot} bot
    * @param {PairData} pairData
    */
   isCompleted(bot, pairData) {
@@ -81,9 +74,14 @@ export default class TraderDeal {
     var allBalanceSold = Math.abs(this.calculateTotalVolumeBought(bot) - this.calculateTotalVolumeSold(bot)) < pairData.minVolume;
 
     if (allSellOrdersExecuted && allBalanceSold) {
-      App.log(greenBright`[${this.id}]: deal completed`);
+      Terminal.instance.log(`Deal ^Gcompleted`);
       return true;
-    } else return false;
+    } else {
+      Terminal.instance.log(
+        `all: ${allSellOrdersExecuted} ${this.calculateTotalVolumeBought(bot) - this.calculateTotalVolumeSold(bot)} ${this.calculateTotalVolumeBought(bot)} / ${this.calculateTotalVolumeSold(bot)}`,
+      );
+      return false;
+    }
   }
 
   /**
@@ -104,38 +102,68 @@ export default class TraderDeal {
 
   /**
    *
+   * @param {string} txid
+   */
+  removeOrder(txid) {
+    var term = Terminal.instance;
+    if (this.buyOrders.includes(txid)) {
+      let idx = this.buyOrders.indexOf(txid);
+      this.buyOrders.splice(idx, 1);
+      term.log(`Buy order ^c${txid}^ ^Rremoved^ from deal ^c${this.id}`);
+    } else if (this.sellOrders.includes(txid)) {
+      let idx = this.sellOrders.indexOf(txid);
+      this.sellOrders.splice(idx, 1);
+      term.log(`Sell order ^c${txid}^ ^Rremoved^ from deal ^c${this.id}`);
+    } else {
+      term.error(`Order ^y${txid}^ does not exist in deal ^c${this.id}`);
+    }
+  }
+
+  /**
+   *
    * @param {CryptoBot} bot
    * @returns
    */
   calculateCostBasis(bot) {
-    if (!this.#exchangeOrders) {
-      this.fetchExchangeOrders(bot);
+    var term = Terminal.instance;
+    var client = bot.getClient(this.account);
+    var orders = this.orders
+      .map((txid) => client.getLocalOrder(txid))
+      .filter((order) => order.isClosed)
+      .sort((a, b) => a.closeDate.getTime() - b.closeDate.getTime());
+
+    var totalCost = 0;
+    var totalProfit = 0;
+    var averageCost = 0;
+    var fifo = new FifoCalculator();
+    for (const order of orders) {
+      if (order.side === 'buy') {
+        fifo.buy(order);
+        averageCost = fifo.totalAmountBought / fifo.balance;
+      } else {
+        let balance = fifo.balance;
+        totalProfit += fifo.sell(order);
+        averageCost = fifo.costBasis / balance;
+      }
     }
 
-    var sumValue = this.#exchangeOrders.reduce((sv, order) => {
-      if (typeof order === 'undefined') {
-        App.warning(`Missing local order in deal ${this.id}`);
-        return sv;
-      } else if (!order.isClosed) return sv;
+    let costBasis = fifo.costBasis == 0 ? fifo.totalAmountBought : fifo.costBasis;
 
-      sv += order.volume * order.price + order.fees;
-      return sv;
-    }, 0);
+    if (isNaN(costBasis)) {
+      term.printObject(orders);
+      term.log(`Avg: ${averageCost} cb: ${costBasis} ${totalCost} tr: ${totalProfit}`);
 
-    let sumWeights = this.calculateTotalVolumeBought(bot);
-    var averagePrice = sumValue / sumWeights;
-    var costBasis = averagePrice * sumWeights;
-
-    if (typeof costBasis === 'undefined' || isNaN(costBasis)) {
-      App.printObject(this.#exchangeOrders);
-      App.error(`Invalid cost basis for deal ${this.id}: ${costBasis}`);
+      term.error(`Invalid cost basis for deal ${this.id}: ${this.costBasis}`);
+      term.log(`Avg: ${averageCost} cb: ${costBasis} ${totalCost} tr: ${totalProfit}`);
     }
-    if (typeof averagePrice === 'undefined' || isNaN(averagePrice)) {
-      App.printObject(this.#exchangeOrders);
-      App.error(`Invalid averagePrice for deal ${this.id}: ${averagePrice}`);
+    if (isNaN(averageCost)) {
+      term.printObject(orders);
+      term.log(`Avg: ${averageCost} cb: ${costBasis} ${totalCost} tr: ${totalProfit}`);
+
+      term.error(`Invalid average cost for deal ${this.id}: ${averageCost}`);
     }
 
-    return { averagePrice: averagePrice, costBasis: costBasis };
+    return { averageCost: averageCost, costBasis: costBasis, profit: totalProfit };
   }
 
   /**
@@ -160,23 +188,24 @@ export default class TraderDeal {
    *
    * @param {CryptoBot} bot
    * @param {BotSettings} botSettings
-   * @returns { { averagePrice: Number, costBasis: Number, targetPrice: Number }}
+   * @returns { { averageCost: Number, costBasis: Number, targetPrice: Number }}
    */
   calculateProfitTarget(bot, botSettings) {
-    var { averagePrice, costBasis } = this.calculateCostBasis(bot);
-    var targetPrice = TraderDeal.CalculateProfitTarget(averagePrice, botSettings.options.profitTarget, botSettings.options.makerFees);
+    var { averageCost, costBasis, _ } = this.calculateCostBasis(bot);
+    var targetPrice = TraderDeal.CalculateProfitTarget(averageCost, botSettings.options.profitTarget, botSettings.options.makerFees);
 
-    return { averagePrice: averagePrice, costBasis: costBasis, targetPrice: targetPrice };
+    return { averageCost: averageCost, costBasis: costBasis, targetPrice: targetPrice };
   }
 
-  static CalculateProfitTarget(averagePrice, targetProfit = 0.01, fees = 0.0016) {
+  static CalculateProfitTarget(averageCost, targetProfit = 0.01, fees = 0.0016) {
     // sp,ap sell/average price
     // t target profit
     // v volume f fees
     // spv - spvf - apv = tapv
     // spv (1-f) = apv(t+1)
     // sp = ap(t+1)/(1-f)
-    return (averagePrice * (1 + targetProfit)) / (1 - fees);
+    Terminal.instance.log(`Avg: ${averageCost} T: ${targetProfit} f: ${fees}`);
+    return (averageCost * (1 + targetProfit)) / (1 - fees);
   }
 
   /**
@@ -185,15 +214,7 @@ export default class TraderDeal {
    * @returns
    */
   calculateProfit(bot) {
-    var { averagePrice, costBasis } = this.calculateCostBasis(bot);
-    let client = bot.getClient(this.account);
-    var profit = this.sellOrders.reduce((profit, id) => {
-      let order = client.getLocalOrder(id);
-      if (order.status === 'open') return profit;
-      profit += order.volume * order.price - order.fees - costBasis;
-      return profit;
-    }, 0);
-
+    var { averageCost: averageCost, costBasis, profit } = this.calculateCostBasis(bot);
     return profit;
   }
 

@@ -1,12 +1,14 @@
 import { yellowBright, cyanBright, redBright, greenBright } from 'ansis';
-import App from '../app.js';
+import App from '../app/app.js';
 import Utils from '../utils.js';
-import fs from 'fs';
 import CryptoBot from '../crypto-bot.js';
 import BotSettings from '../data/bot-settings.js';
 import EcaOrder from '../data/eca-order.js';
 import PairData from '../data/pair-data.js';
 import ClientBase from '../services/client.js';
+import ExchangeOrder from '../data/exchange-order.js';
+import Terminal from '../app/terminal.js';
+import Action from '../data/action.js';
 
 export default class Strategy {
   /** @type {CryptoBot} */
@@ -28,8 +30,6 @@ export default class Strategy {
 
   /** @type {Map<string, EcaOrder>} */
   #flags = new Map();
-  strategyOrders = {};
-  #lastHistoryCheck;
 
   /**
    *
@@ -46,15 +46,6 @@ export default class Strategy {
     this.botSettings = bot.getBotSettings(botId);
     this.client = this.#bot.getClient(this.botSettings.account);
     this.pairData = this.client.getPairData(this.botSettings.pair);
-
-    let path = `${App.DataPath}/${this.botSettings.account}/${this.botSettings.strategyType.replace('eca-', '')}-${this.botId.replace('/', '-')}.json`;
-    if (fs.existsSync(path)) {
-      this.strategyOrders = App.readFileSync(path);
-      this.#lastHistoryCheck = this.strategyOrders['lastCheck'];
-      delete this.strategyOrders['lastCheck'];
-    } else {
-      this.rebuildHistory();
-    }
   }
 
   get bot() {
@@ -77,7 +68,7 @@ export default class Strategy {
   setFlag(key, value) {
     var name = Object.keys(key)[0];
     if (typeof name === 'undefined') {
-      App.warning('Invalid flag');
+      Terminal.instance.warning('Invalid flag');
       return;
     }
 
@@ -87,7 +78,7 @@ export default class Strategy {
   clearFlag(key) {
     var name = Object.keys(key)[0];
     if (typeof name === 'undefined') {
-      App.warning('Invalid flag');
+      Terminal.instance.warning('Invalid flag');
       return;
     }
     this.#flags.delete(name);
@@ -97,22 +88,25 @@ export default class Strategy {
     this.#flags.clear();
   }
 
+  /**
+   * @param {string} message
+   */
   logStatus(message, severity = 'info') {
-    this.statusMessages.push(App.stripAnsi(message));
+    this.statusMessages.push(Terminal.stripAnsi(message));
     switch (severity) {
       case 'infoTimestamp':
-        App.log(message, true);
+        Terminal.log(message, true);
         break;
 
       case 'info':
-        App.log(message);
+        Terminal.log(message);
         break;
       case 'warning':
-        App.warning(message);
+        Terminal.warning(message);
         break;
 
       case 'errorNonBlocking':
-        App.log(message, true, redBright);
+        Terminal.log(message, true, redBright);
         break;
     }
     return message;
@@ -123,12 +117,47 @@ export default class Strategy {
    * @returns {Boolean}
    */
   hasActiveOrders() {
-    App.error(`${this.botSettings.fullId}: <${Utils.functionName()}> not implemented`);
+    Terminal.error(`${this.botSettings.fullId}: <${Utils.functionName()}> not implemented`);
     return false;
   }
 
-  requiresNewPlannedOrder() {
-    return this.getPlannedOrders(this.botId).every((o) => o.isExecuted);
+  /**
+   * @callback cancelCallback
+   * @param {ExchangeOrder} order
+   */
+  /**
+   *
+   * @param {Action} action
+   * @param {cancelCallback} cancelCallback
+   */
+  async awaitConfirmation(action, cancelCallback) {
+    let order = action.plannedOrder.order;
+    var term = Terminal.instance;
+
+    term.log('\r');
+    var actionLabel = '';
+    switch (action.command) {
+      case 'submitOrder':
+        term.log(`^[bg:red]      ^ ^rCreating new order^: ^[bg:red]      `);
+        break;
+      case 'editOrder':
+        term.log(`^[bg:Yellow]      ^ ^rEditing order^: ^[bg:Yellow]      `);
+        break;
+      case 'cancelOrder':
+        actionLabel = action.command.replace('Order', '');
+        break;
+    }
+
+    term.log(`^R--> ${actionLabel}^ ${order.toString(this.pairData)}`);
+
+    var r = await term.yesOrNo('Proceed?', 2);
+    term.resetPrompt();
+    if (r) {
+      return this.client.executeActions([action]);
+    } else {
+      cancelCallback(order);
+      term.log('Action cancelled');
+    }
   }
 
   /**
@@ -136,62 +165,42 @@ export default class Strategy {
    * @param {string} balanceLabel
    */
   balanceCheck(volumeQuote, balanceLabel = null) {
+    var term = Terminal.instance;
     if (typeof this.currentPrice === 'undefined') this.currentPrice = this.client.getPrice(this.pairData.id);
-    var accountClient = this.bot.getClient(this.botSettings.account);
+    var client = this.bot.getClient(this.botSettings.account);
+
     if (balanceLabel == null) balanceLabel = this.pairData.quote;
-    var availableBalance = accountClient.getBalance(balanceLabel);
+
+    var availableBalance = client.getBalance(balanceLabel);
+    if (availableBalance == 0 && this.botSettings.alternateQuote) availableBalance = client.getBalance(this.botSettings.alternateQuote);
+
     volumeQuote ??= this.botSettings.maxVolumeQuote;
     var balanceCheck = availableBalance >= volumeQuote;
 
-    var maxQuoteDigits = this.pairData.maxQuoteDigits;
+    var maxQuoteDigits = App.locale.minQuoteDigits;
     if (isNaN(volumeQuote)) {
-      App.warning(`[${this.botId}] V: ${this.pairData.minVolume}`);
-      App.printObject(this.botSettings.toJSON());
+      term.warning(`[${this.botId}] V: ${this.pairData.minVolume}`);
+      term.printObject(this.botSettings.toJSON());
       return false;
     }
 
-    //try {
-    this.logStatus(
-      `Order for ${volumeQuote.toFixed(maxQuoteDigits)} ${this.botSettings.quote} (${(volumeQuote / this.currentPrice).toFixed(this.pairData.maxBaseDigits)} ${this.pairData.base}) ${balanceCheck ? greenBright`can` : redBright`cannot`} be executed at current market price`,
+    term.log(
+      `^GBuy^ order for ^R${volumeQuote.toFixed(maxQuoteDigits)}^ ${this.botSettings.quote.toUpperCase()} (^C${(volumeQuote / this.currentPrice).toFixed(this.pairData.maxBaseDigits)}^ ${this.pairData.base.toUpperCase()}) ${balanceCheck ? `^Gcan` : `^Rcannot`}^ be executed at current market price`,
     );
 
-    this.logStatus(
-      `${this.pairData.id}: ${yellowBright`${this.currentPrice.toFixed(maxQuoteDigits)}`} Available: ${yellowBright`${availableBalance.toFixed(maxQuoteDigits)} ${this.pairData.quote}`}`,
+    term.log(
+      `Current price: ^y${this.currentPrice.toFixed(maxQuoteDigits)}^ ${this.pairData.quote.toUpperCase()} | Available balance: ^Y${availableBalance.toFixed(maxQuoteDigits)}^ ${this.pairData.quote.toUpperCase()}`,
     );
-    // } catch (e) {
-    //   App.warning('Unexpected error in balanceCheck');
-    //   console.log(this.pairData);
-    //   console.log([availableBalance, volumeQuote, this.currentPrice]);
-    //   App.error(e, true);
-    //   return false;
-    // }
 
     return balanceCheck;
   }
 
   /**
    * @param {string} statusFilter
-   * @returns {EcaOrder[]}
+   * @returns {Promise<EcaOrder[]>}
    */
-  getPlannedOrders(statusFilter = undefined) {
-    var data = [];
-    for (let [status, orders] of Object.entries(this.strategyOrders)) {
-      if (statusFilter !== undefined && statusFilter !== status) continue;
-      for (let orderTxid of orders) {
-        let order = this.client.getLocalOrder(orderTxid);
-        data.push(
-          new EcaOrder(
-            {
-              botId: this.botId,
-              account: this.client.id,
-              strategy: this.botSettings.strategyType,
-            },
-            order,
-          ),
-        );
-      }
-    }
-    return data;
+  async getPlannedOrders(statusFilter = undefined) {
+    return null;
   }
 
   /**
@@ -217,21 +226,26 @@ export default class Strategy {
    * @returns {Boolean}
    */
   volumeCheck(volume, alternate = false) {
+    var term = Terminal.instance;
     let volumeLabel = alternate ? this.botSettings.alternateBase : this.pairData.base;
     var availableBalance = this.client.getBalance(volumeLabel);
     var volumeCheck = availableBalance >= volume;
-    var colour = volumeCheck ? greenBright : redBright;
-    this.logStatus(
-      `${this.pairData.id}: Requested ${yellowBright`${volume.toFixed(this.pairData.maxBaseDigits)}`} Available: ${colour`${availableBalance.toFixed(this.pairData.maxBaseDigits)} ${volumeLabel}`}`,
+    var colour = volumeCheck ? '^G' : '^R';
+    term.log(
+      `Bot ${this.botId}: requested ^y${volume.toFixed(this.pairData.maxBaseDigits)} Available: ${colour}${availableBalance.toFixed(this.pairData.maxBaseDigits)}^ ${volumeLabel.toUpperCase()}`,
     );
     return volumeCheck;
   }
 
-  decide() {
-    App.error(`${this.botSettings.fullId}: <${Utils.functionName()}> not implemented`);
+  /**
+   * @returns {Promise<any>}
+   */
+  async decide() {
+    Terminal.error(`${this.botSettings.fullId}: <${Utils.functionName()}> not implemented`);
+    return null;
   }
 
   rebuildHistory() {
-    App.warning(`${this.botSettings.fullId}: <${Utils.functionName()}> not implemented`);
+    Terminal.warning(`${this.botSettings.fullId}: <${Utils.functionName()}> not implemented`);
   }
 }

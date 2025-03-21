@@ -1,0 +1,24 @@
+<div class="bg-dark-container p-md-4 p-2 mt-4">
+    <div class="row"><h4>New deal preview</h4></div>
+    <% for( let i = 0; i < orders.length; i++ )  {  %>
+        <% let order = orders[i]; %>
+        <div class="row">
+            <div class="col-3 text-start"><%= order.dateText %></div>
+            <div class="col-2-5 text-start fw-bold <%= order.textClass %>"><i class="bi <%= order.iconClass %>"></i><%= order.side %> <%= order.type %></div>
+            <div class="col-1-5 text-end text-info"><%= order.volumeQuote.toFixed(quoteDigits) %> €</div>
+            <div class="col-1-5 text-end text-danger"><%= order.feeQuote.toFixed(quoteDigits) %> €</div>
+            <div class="col-3-5 text-end"><%= order.volume.toFixed(baseDigits) %> <%= base.toUpperCase() %> @ <%= order.price.toFixed(quoteDigits) %> <%= quote.toUpperCase() %></div>
+        </div>
+    <%  } %>
+    <div class="row border-top">
+        <div class="col-4 text-start fw-bold">Total:</div>
+        <div class="col-2 text-end"><%= preview.total.toFixed(quoteDigits) %> €</div>
+        <div class="col-2 text-start fw-bold">Profit</div>
+        <div class="col-4 text-end text-success"><%= (preview.margin * 100).toFixed(quoteDigits) %>% (<%= preview.profit.toFixed(quoteDigits) %>€)</div>
+    </div>
+    <div class="row mb-4">
+        <div class="col-6 text-start"></div>
+        <div class="col-4 text-start fw-bold">Deviation</div>
+        <div class="col-2 text-end text-danger"><%= (100 - (preview.lastSO / preview.buyPrice) * 100).toFixed(quoteDigits) %> %</div>
+  </div>
+</div>
